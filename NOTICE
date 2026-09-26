@@ -1,0 +1,49 @@
+OpenPlow Support
+Copyright (c) 2026 Daniel Kumanaya
+
+This product includes software developed by The Plow Collective, Inc. OpenPlow
+Support is not affiliated with, operated by, or endorsed by The Plow
+Collective, Inc. It builds on Plow's software and supports the Plow ecosystem.
+
+--------------------------------------------------------------------------------
+What is ours
+--------------------------------------------------------------------------------
+
+Everything in `prompt/`, `skills/`, `scripts/`, `dev/`, `compose.yml`,
+`Dockerfile` and this repository's own documents. MIT, per LICENSE.
+
+--------------------------------------------------------------------------------
+What we build ON, and do not redistribute
+--------------------------------------------------------------------------------
+
+`Dockerfile` starts `FROM public.ecr.aws/e1h7x4a2/plow-cloud-agents:base-...`,
+the Plow base image built by https://github.com/plow-pbc/plow-openclaw-agent. We
+did not copy its code and we do not ship it. It is a build input, like a
+compiler.
+
+  **The base image carries no declared licence.** The GitHub API reports
+  `license: None` for plow-pbc/plow-openclaw-agent, and its `owners-mac` and
+  `google-workspace` skills carry no licence header either. We build on it and
+  ship none of it. We also copy none of it: our `COPY skills/ /opt/plow/skills/`
+  merges our three skills in beside the base's and leaves the base's where the
+  base put them. If you need those two skills under a licence, ask Plow.
+
+--------------------------------------------------------------------------------
+What we read at runtime, and do not redistribute
+--------------------------------------------------------------------------------
+
+The `plow-wiki` skill, from https://github.com/plow-pbc/plow-wiki (Apache-2.0).
+We do not vendor it. The owner installs the `wiki` Latch plugin on their Mac, the
+plugin publishes its own `skill.md` there, and the agent reads it at runtime with
+`plow_list_skills` / `plow_read_skill` — the same path the base's `owners-mac`
+skill uses for anything the Mac publishes. If the plugin is not installed, this
+agent has no long-term memory and says so; it does not fall back to a copy of
+the skill baked into this image.
+
+--------------------------------------------------------------------------------
+Trademarks
+--------------------------------------------------------------------------------
+
+"Plow" and the Plow logo are trademarks of The Plow Collective, Inc. This
+license grants no trademark rights, and the use of the name here is nominative:
+it names whose platform this agent runs on.

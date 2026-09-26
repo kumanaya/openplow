@@ -1,0 +1,40 @@
+#!/bin/sh
+# Bring the vault up to date: validate, index, snapshot. In that order, because
+# each one depends on the last — you do not index pages that fail their schema,
+# and you do not commit a broken tree.
+#
+# RUNS AS ROOT, and it has to. The agent cannot: it is not allowed to write the
+# canonical tree, and these three commands all do. That is the point — the
+# knowledge base is maintained by the deployment, not by the thing answering
+# customers from it.
+#
+#   docker compose run --rm --user root agent /opt/plow/bin/wiki-refresh
+#
+# Safe to run repeatedly. `validate` exits 1 on a bad page, and the digest names
+# it rather than guessing, so a failure here is a work queue, not a crash.
+set -eu
+
+: "${WIKI_PATH:=/data/wiki}"
+WIKI_AUTHOR="${WIKI_AUTHOR:-OpenPlow Support}"
+
+here=$(dirname "$0")
+# shellcheck source=/dev/null
+. "$here/wiki-ownership.sh"
+
+echo "wiki-refresh: $WIKI_PATH"
+
+if ! wiki validate; then
+  echo "wiki-refresh: validation failed. The pages it named are in the output above." >&2
+  echo "wiki-refresh: not indexing, not committing — an unvalidated tree is not worth recording." >&2
+  exit 1
+fi
+
+wiki index
+wiki snapshot --author "$WIKI_AUTHOR"
+
+# The snapshot created history as root; re-assert so a first run on a fresh
+# volume cannot leave an agent-writable .git behind.
+# shellcheck source=/dev/null
+. "$here/wiki-ownership.sh"
+
+echo "wiki-refresh: done"

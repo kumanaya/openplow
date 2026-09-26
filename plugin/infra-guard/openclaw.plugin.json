@@ -1,0 +1,8 @@
+{
+  "id": "infra-guard",
+  "name": "OpenPlow infrastructure guard",
+  "description": "A customer support agent never discloses the host, container, runtime, paths or model it runs on.",
+  "enabledByDefault": true,
+  "activation": { "onStartup": true },
+  "configSchema": { "type": "object", "additionalProperties": false }
+}

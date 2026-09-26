@@ -1,0 +1,8 @@
+{
+  "name": "@openplow/infra-guard",
+  "version": "0.1.0",
+  "description": "OpenClaw plugin: a support agent never reports the machine, runtime or model underneath it.",
+  "type": "module",
+  "license": "MIT",
+  "openclaw": { "extensions": ["./index.js"] }
+}

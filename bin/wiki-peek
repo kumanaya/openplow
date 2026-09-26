@@ -1,0 +1,39 @@
+#!/bin/sh
+# What is in the vault right now. Read-only: it changes nothing, starts nothing
+# and talks to nothing. Safe to run at any time, including while the agent is
+# answering tickets.
+#
+#   wiki-peek
+#
+# The point is that you should never have to ask the owner's Mac whether the
+# knowledge base is there. This answers from the deployment.
+set -eu
+
+: "${WIKI_PATH:=/data/wiki}"
+
+if [ ! -f "$WIKI_PATH/wiki.toml" ]; then
+  echo "no vault at $WIKI_PATH"
+  exit 0
+fi
+
+pages=$(find "$WIKI_PATH" -name '*.md' -type f -not -path "$WIKI_PATH/_raw/*" 2>/dev/null | wc -l | tr -d ' ')
+candidates=$(find "$WIKI_PATH/_raw" -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')
+
+echo "vault:    $WIKI_PATH"
+echo "pages:    $pages canonical"
+echo "pending:  $candidates candidate(s) in _raw/"
+
+if [ -d "$WIKI_PATH.git" ]; then
+  last=$(git --git-dir "$WIKI_PATH.git" --work-tree "$WIKI_PATH" log -1 --format='%h %ad %s' --date=short 2>/dev/null || echo "")
+  [ -n "$last" ] && echo "history:  $last"
+else
+  echo "history:  none yet — run wiki-refresh"
+fi
+
+if [ "$candidates" -gt 0 ]; then
+  echo ""
+  echo "waiting in _raw/:"
+  find "$WIKI_PATH/_raw" -name '*.md' -type f 2>/dev/null | while IFS= read -r f; do
+    echo "  ${f#"$WIKI_PATH"/}"
+  done
+fi

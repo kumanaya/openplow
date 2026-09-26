@@ -1,0 +1,96 @@
+#!/bin/sh
+# Copy pages from a mounted directory into the vault, then validate, index and
+# snapshot. This is how knowledge arrives: a fresh install, an update to the
+# bundled corpus, or a migration from a vault that used to live on a Mac.
+#
+#   wiki-import <src> <force: 0|1> [--check]
+#
+#   <src>     a directory mounted read-only, containing the pages
+#   force     0 = add only what is missing, 1 = overwrite what is there
+#   --check   report what would change and touch nothing
+#
+# NEVER DELETES. There is no `--delete` and no `rm` of a page anywhere in this
+# file. A vault is shared organizational knowledge; removing a page from it is a
+# decision a person makes, and the way they make it is `wiki history` and a
+# revert, not a flag on a copy script.
+set -eu
+
+SRC="${1:?usage: wiki-import <src|-> <force> [--check]}"
+FORCE="${2:-0}"
+CHECK="${3:-}"
+
+: "${WIKI_PATH:=/data/wiki}"
+here=$(dirname "$0")
+
+# <src> is a directory, or `-` to read a tar stream from stdin. The stream form
+# exists so a host script never has to hand the docker daemon a host path:
+# that string differs between a macOS host, a WSL host and a Linux host, and
+# whichever one you test on is the one that works.
+if [ "$SRC" = "-" ]; then
+  WORK=/tmp/openplow-import
+  rm -rf "$WORK"
+  mkdir -p "$WORK"
+  tar -xf - -C "$WORK"
+  SRC="$WORK"
+fi
+
+[ -d "$SRC" ] || { echo "wiki-import: no such directory: $SRC" >&2; exit 1; }
+
+COPIED=0
+SKIPPED=0
+mkdir -p "$WIKI_PATH"
+
+# A vault must never contain a .git (the history lives beside it, and the wiki
+# treats one as a hard error) and .wiki/ is generated output that `wiki index`
+# owns. Neither is ever imported.
+list_pages() {
+  ( cd "$SRC" && find . -type f \
+      -not -path './.git/*' \
+      -not -path './.wiki/*' \
+      -not -name '.DS_Store' \
+      -print )
+}
+
+
+# Create the vault BEFORE copying into it. `wiki init` refuses a non-empty path,
+# and on a first run this directory is empty right up until the copy starts.
+[ "$CHECK" = "--check" ] || "$here/wiki-bootstrap"
+if [ "$CHECK" = "--check" ]; then
+  while IFS= read -r rel; do
+    if [ -e "$WIKI_PATH/$rel" ]; then
+      if [ "$FORCE" = "1" ]; then
+        echo "  would overwrite  ${rel#./}"
+      else
+        echo "  would keep        ${rel#./}"
+      fi
+      SKIPPED=$((SKIPPED + 1))
+    else
+      echo "  would add         ${rel#./}"
+      COPIED=$((COPIED + 1))
+    fi
+  done <<EOF
+$(list_pages)
+EOF
+  echo "wiki-import: $COPIED to add, $SKIPPED already present"
+  exit 0
+fi
+
+while IFS= read -r rel; do
+  if [ -e "$WIKI_PATH/$rel" ] && [ "$FORCE" != "1" ]; then
+    SKIPPED=$((SKIPPED + 1))
+    continue
+  fi
+  mkdir -p "$(dirname "$WIKI_PATH/$rel")"
+  # Not `cp -p`: a bind mount carries the host's uid, and preserving it would
+  # hand the agent a writable canonical page. Ownership is set from the
+  # contract afterwards, not inherited from whoever is copying.
+  cat "$SRC/$rel" > "$WIKI_PATH/$rel"
+  COPIED=$((COPIED + 1))
+done <<EOF
+$(list_pages)
+EOF
+
+echo "wiki-import: $COPIED copied, $SKIPPED left as they were"
+
+# Bring it to a good state: ownership, validate, index, snapshot.
+"$here/wiki-refresh"

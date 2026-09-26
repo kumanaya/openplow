@@ -1,0 +1,36 @@
+# The build context is the whole repository, and the repository holds things
+# that must never reach the Docker daemon, let alone a layer:
+#
+#   plow-credentials  the live agent token, minted and mode 600
+#   .git              every commit, and the remotes that name where it went
+#   .tools/           a clone of plow-agents
+#
+# Anything the Dockerfile COPYs must NOT be listed here. Those are, in order:
+# bin/, prompt/AGENTS.md, skills/, plugin/infra-guard/.
+
+.git
+.gitattributes
+.gitignore
+.dockerignore
+
+# Minted credential. This is the one that matters: exclude-list, not a
+# negation, so a new credential name cannot fall through by accident.
+plow-credentials
+plow-credentials.*
+.tools/
+
+# Not build inputs. Kept out of the context, not out of the repository.
+compose.yml
+dev/
+seed/
+scripts/
+test/
+assets/
+INSTALL.md
+LATCH-RULES.md
+NOTICE
+README.md
+SECURITY.md
+*.log
+.DS_Store
+Thumbs.db

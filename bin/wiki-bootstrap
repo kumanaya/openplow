@@ -1,0 +1,45 @@
+#!/bin/sh
+# Create the vault if it does not exist yet, then hand the candidate inbox to
+# the agent. Idempotent: safe on a fresh volume, safe on a live one.
+#
+#   docker compose run --rm --user root agent /opt/plow/bin/wiki-bootstrap
+#
+# RUNS AS ROOT. Two reasons, and the second is the one that matters:
+#   1. `wiki init` and the ownership contract are root operations;
+#   2. doing this from a root step is what makes the boundary real. If the agent
+#      could run this, it could init and re-own a vault and hand itself write
+#      access to canonical knowledge.
+#
+# Nothing here talks to Latch, the Plow relay, or the network. The vault belongs
+# to the deployment and is created by the deployment.
+set -eu
+
+: "${WIKI_PATH:=/data/wiki}"
+
+echo "wiki-bootstrap: $WIKI_PATH"
+
+# The ownership helper is deliberately NOT sourced yet. It creates _raw, and
+# `wiki init` refuses a non-empty path — running it first would make every fresh
+# volume look like something worth refusing to touch.
+
+if [ -f "$WIKI_PATH/wiki.toml" ]; then
+  echo "wiki-bootstrap: already a wiki, leaving the structure alone"
+else
+  if [ -n "$(ls -A "$WIKI_PATH" 2>/dev/null)" ]; then
+    echo "wiki-bootstrap: $WIKI_PATH has files but no wiki.toml — not empty, not a wiki." >&2
+    echo "wiki-bootstrap: refusing to init over it. Move it aside, or seed a vault into an empty one." >&2
+    exit 1
+  fi
+  wiki init "$WIKI_PATH"
+fi
+
+# From here the structure exists, so the contract can be asserted: canonical
+# knowledge and history become root-owned, and the candidate inbox — which the
+# agent has to own, or the first solved ticket could not file anything — becomes
+# the agent's.
+#
+# shellcheck source=/dev/null
+. "$(dirname "$0")/wiki-ownership.sh"
+
+echo "wiki-bootstrap: agent may read $WIKI_PATH and write $WIKI_PATH/_raw"
+echo "wiki-bootstrap: canonical knowledge and history are root-owned and read-only to the agent"

@@ -1,0 +1,26 @@
+# This is built and run on Linux containers and in POSIX sh, from a Windows
+# checkout, with core.autocrlf=true by default on this machine. Without this,
+# a fresh clone here hands the container a CRLF shebang and a CRLF Dockerfile,
+# and `sh scripts/publish-story.sh` dies on a stray \r.
+
+* text=auto eol=lf
+
+*.sh   text eol=lf
+Dockerfile    text eol=lf
+*Dockerfile   text eol=lf
+compose.yml   text eol=lf
+Caddyfile     text eol=lf
+*.md          text eol=lf
+
+# Never rewritten, never line-ending converted.
+plow-credentials   -text -diff
+
+# Images. Git must never try to diff or line-end-convert these, and a
+# CRLF-forced .svg still renders but reads as noise in a diff.
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.webp   binary
+*.mp4    binary
+*.svg    text eol=lf

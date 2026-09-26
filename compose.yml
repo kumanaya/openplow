@@ -1,0 +1,53 @@
+# Pinned, and deliberately NOT derived from the directory name. Renaming the
+# checkout must not orphan the running deployment: an implicit project name
+# also names the `state` volume, so a rename would quietly hand the agent an
+# empty volume and leave the old containers still holding port 3001. Same
+# reasoning as naming the wiki volume explicitly — a deployment outlives what
+# it happens to be called on disk.
+name: openplow-support
+
+services:
+  agent:
+    build: .
+    # Literal, never interpolated from the host: the base's reporter reads
+    # AGENT_ID, and an inherited value would report this agent's usage as
+    # somebody else's. Dockerfile sets the same value.
+    environment:
+      AGENT_ID: openplow-support
+    env_file: ./plow-credentials
+    ports:
+      - "127.0.0.1:3001:3001"
+    # `state` is the runtime's own. `wiki` is organizational knowledge, and it
+    # is NAMED, not a bind mount, because it has to outlive the container:
+    # `docker compose down`, an image rebuild and a redeploy all keep it.
+    # WIKI_PATH (set in the Dockerfile) points inside it, so the vault and its
+    # history — $WIKI_PATH.git, which the wiki keeps beside itself — ride on the
+    # same volume and cannot drift apart.
+    volumes:
+      - state:/var/lib/plow
+      - wiki:/data
+    stop_grace_period: 35s
+  # Local only. This plays Plow's agent-web proxy, which sits in front of your
+  # image in the cloud, so localhost:3001 behaves like the production dashboard.
+  # Anyone who can reach localhost:3001 on this machine is admin — it is
+  # loopback-published, and the Caddyfile refuses a foreign browser Origin.
+  dev-dashboard:
+    image: caddy:2@sha256:14a9c00d4e833ebc2b65d36515b37bde3b73f0b323a2663aaafc88953d8c4e3f
+    network_mode: service:agent
+    depends_on: [agent]
+    volumes:
+      - ./dev/Caddyfile:/etc/caddy/Caddyfile:ro
+volumes:
+  state:
+  # Named EXPLICITLY, not `<project>_wiki`, and `external` because the scripts
+  # in scripts/ create and read this volume WITHOUT compose (wiki-peek,
+  # wiki-import, wiki-refresh all run as plain `docker run`). A compose-owned
+  # volume would be second-guessed every `up` with "not created by Docker
+  # Compose", and — worse — `docker compose down -v` would delete
+  # organizational knowledge that the agent never owned.
+  #
+  # Create it once:  docker volume create openplow-wiki
+  # Keep this name in step with scripts/lib.sh.
+  wiki:
+    name: openplow-wiki
+    external: true

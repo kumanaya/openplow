@@ -1,0 +1,18 @@
+# Minted by `plow-agents mint`. It carries PLOW_AGENT_TOKEN — the credential
+# this container boots holding. Never commit it, never put it in an image layer.
+plow-credentials
+plow-credentials.*
+
+# The plow-agents clone. It is a repository, run with python3, not a package.
+.tools/
+
+# Local state
+*.log
+.DS_Store
+Thumbs.db
+
+# Commit tooling run with `npm install --no-save git-cz`. Never part of this
+# repository: it is third-party code carrying its own licences, and this repo
+# is MIT. `git add -A` will otherwise stage the lot.
+node_modules/
+cz-run.mjs
