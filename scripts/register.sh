@@ -26,7 +26,7 @@ set -eu
 # not given alone, so omitting one here never clears an edit you made there.
 AGENT_SLUG="${AGENT_SLUG:-openplow-support}"
 AGENT_NAME="${AGENT_NAME:-OpenPlow Support}"
-AGENT_BLURB="${AGENT_BLURB:-OpenPlow, a customer support agent built with OpenClaw, Latch and plow-wiki. It answers with receipts, investigates through Latch when the knowledge base runs out, and files what it learns as candidate knowledge for a human to promote.}"
+AGENT_BLURB="${AGENT_BLURB:-OpenPlow answers customer questions from the product wiki and hands unanswered cases to the owner. The owner can separately connect an internal OpenClaw agent to Latch over MCP for authorized operations.}"
 
 # Must match --video's expectation: a YouTube VIDEO ID, not a URL.
 AGENT_VIDEO="${AGENT_VIDEO:-}"

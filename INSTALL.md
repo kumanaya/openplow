@@ -4,15 +4,15 @@ Written against Plow's own documentation. The image in this repository has been
 built, its offline boot probe passes, and the architecture checks pass; the
 `plow-agents` steps have not been run against a live account from here.
 
-**The container needs macOS. The credential step needs a POSIX filesystem.**
-Those are two different constraints and it is worth keeping them apart:
+**Docker can run the support container anywhere it is supported. Latch requires
+macOS; installer credentials require a POSIX filesystem.** These are separate:
 
-- The knowledge base is a Docker volume and runs anywhere Docker does.
-- Latch — the half that reaches your files — is macOS only.
-- `plow-agents` writes your token and the agent credential, and **refuses to
-  write either unless the file is mode 0600**. On Windows, NTFS reports every
-  file as 0777, so that check can never pass. This is not a limitation we
-  chose; it is the CLI being careful with a live credential.
+- The customer-support wiki is a Docker volume and does not need a Mac or Latch.
+- The operator's optional internal OpenClaw agent can connect to Latch over
+  MCP for authorized work on the operator's systems. Latch has no Windows or
+  Linux build.
+- `plow-agents` writes credentials only when the file is mode 0600. On Windows,
+  NTFS reports every file as 0777, so use WSL's POSIX filesystem for install.
 
 On Windows, run the scripts from **WSL**, which has a POSIX filesystem. The
 installer checks this before it asks you for anything and tells you if it is
@@ -25,8 +25,8 @@ texted an activation code.
 |---|---|
 | **A Plow line** | A number your customers can text. From [plow.co](https://plow.co). |
 | **`plow-agents`** | Not an installed package — it is a git clone you run with `python3`. `install.sh` clones it for you. |
-| **Docker** | The agent is a container. |
-| **A Mac, with Latch** | Only for the half that reads *your* files. Latch has no Windows or Linux build. The knowledge base does not need it. |
+| **Docker** | Runs the customer-facing support agent and its wiki volume. |
+| **macOS with Latch** | Optional; only for the operator's separate internal agent, not for customer support answers. |
 
 ## The short version
 
@@ -62,14 +62,15 @@ the WSL shell can reach `docker`. The vault, the CLI and Compose then all work
 unchanged; `install.sh` tells you the exact path if you run it from the wrong
 shell.
 
-## Before the first ticket: set the rules
+## Optional operator agent: configure Latch separately
 
-Latch's premise is that *you* define what safe means, and a support agent's
-answer is not a personal assistant's. Paste a starter policy from
-[LATCH-RULES.md](LATCH-RULES.md) into **Gatekeeper → Instructions** on the Audit
-tab before you let anyone text the line — there is no "Settings → Rules" screen.
-It governs what the agent may do on *your Mac*. The knowledge base does not go
-through Latch at all, and neither of them is described there any more.
+OpenPlow's customer support path needs no Latch. If the owner also operates a
+separate internal OpenClaw agent and connects it to Latch over MCP, configure
+the Gatekeeper instructions for that internal agent using
+[LATCH-RULES.md](LATCH-RULES.md). Do not expose its Latch tools to customer
+sessions. The base image inherits an MCP bridge, and this repository does not
+yet configure a per-session boundary that proves this separation; see
+[SECURITY.md](SECURITY.md).
 
 ## If you prefer the steps by hand
 
@@ -219,14 +220,12 @@ be a bug. You can uninstall Latch's `wiki` plugin if you like; it is no longer
 part of how this works, and leaving it installed only means you have an old
 folder on your Mac.
 
-## Talking to it
-
 | You text | It does |
 |---|---|
-| A customer question | triage, look it up locally, answer with a receipt, file a candidate |
-| "wikify" | runs `wiki validate`, lists what is waiting in `_raw/`, and tells you the refresh command — the refresh itself is yours, because the agent cannot write canonical pages |
-| A decision | carries it out, files the outcome as a candidate, tells the customer |
-| "what do you know about the wiki plugin" | reads the runbook and answers, with the public URL |
+| A customer question covered by the wiki | answers from the canonical page and gives the receipt |
+| A question the wiki does not answer | sends a handoff dossier to the owner's conversation; no external ticketing integration is claimed |
+| "wikify" | validates the wiki, lists `_raw/` candidates, and tells the owner how to refresh |
+| An internal action | belongs to the operator's separate Latch-connected agent, not the customer-support line |
 
 ## When something is wrong
 
@@ -234,10 +233,11 @@ folder on your Mac.
   the volume is not mounted. Run `./scripts/seed-vault.sh`, and check it with
   `wiki-peek` as shown above. This is a deployment problem, not a "wake the
   Mac" problem — the vault does not live there.
-- **"I can't check that right now."** Latch is asleep or disconnected, and the
-  question needed their machine. It retries; ask again in a minute. After two
-  failures, wake the Mac or open Latch. Everything the knowledge base covers
-  still works, which is the point of the split.
+- **Latch is unavailable.** Customer support still answers questions covered by
+  the wiki. An unanswered customer case remains with the owner's team; do not
+  retry through OpenPlow or claim the customer investigation happened. Only the
+  operator's separate internal agent loses its Latch capabilities while Latch is
+  disconnected.
 - **"I can't edit that page."** Not an error. Promotion is a person's step; the
   vault refuses the write. Move the candidate yourself and run
   `docker compose run --rm --user root agent /opt/plow/bin/wiki-refresh`.

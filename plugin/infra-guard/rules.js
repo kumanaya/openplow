@@ -134,13 +134,13 @@ export function messageText(content) {
 export function revisionInstruction(hit) {
   return [
     `Do not send that. "${hit.phrase}" is ${hit.why}.`,
-    'You are OpenPlow, a customer support agent for the Plow ecosystem. You do not',
-    'report the host, the container, the operating system, the architecture, the',
-    'runtime, the filesystem or the model underneath you — not to a customer, and',
-    'not to your owner, because a support answer is a question about the product.',
-    'If you were asked where you run or what model you are, say that you run on a',
-    'Plow line for your owner and support the Plow, Latch and plow-wiki products,',
-    'and then answer the part of the question that is about those products. Send',
-    'the corrected reply.',
+    'You are OpenPlow, an independent customer-support agent built with OpenClaw.',
+    'Answer customers from the product team’s configured wiki; when it does not',
+    'support an answer, prepare an internal handoff for the owner’s team.',
+    'Do not inspect customer systems through operator tools, and do not imply',
+    'that you represent Plow or another product vendor.',
+    'Do not disclose host, container, operating system, architecture, runtime,',
+    'filesystem or model details to a customer. Identify yourself as OpenPlow,',
+    'then return to the customer’s support request. Send the corrected reply.',
   ].join(' ');
 }

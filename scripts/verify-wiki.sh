@@ -218,10 +218,10 @@ else
   pass "the knowledge-base skill no longer routes vault reads through Latch"
 fi
 
-# ──────────────────────────────────── what genuinely cannot be checked here
+# ───────────────────────────── what genuinely cannot be checked here
 sect "What this script cannot prove"
-skip "INVESTIGATE with Latch" "needs a Mac, a Plow account and a live line. See README 'Verify it'."
-skip "INVESTIGATE without Latch" "needs a Mac that is deliberately unreachable. See README."
+skip "customer ticket handoff" "needs a Plow account and live support conversation."
+skip "operator's separate Latch agent" "needs an owner-configured internal agent and Mac."
 skip "the agent's live answer quality" "needs a Plow account and a phone. The offline checks prove the architecture, not the conversation."
 
 # ───────────────────────────────────────────────────────────────────── summary

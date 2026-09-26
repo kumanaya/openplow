@@ -29,34 +29,30 @@ Precedence, in order: a global **Deny everything** refuses first of all; then
 always-allow rule; then the approval mode, so the reviewer decides what is
 left. **An AI reviewer denial grants nothing and cannot be overridden.**
 
-That third line is the one worth knowing before you answer a customer who asks
-whether the agent is fenced in. `~/Plow` is granted as a tree, so a read or
-write anywhere inside it is allowed with no prompt and no review, in every mode
-except Deny everything. It is wider than it sounds — whatever an owner keeps
-there is reachable without a decision.
+The `~/Plow` carve-out is important for the operator's internal agent: a read
+or write anywhere inside the tree may be auto-approved without a prompt.
+Understand this before allowing that agent to use a capability that reaches
+`~/Plow`.
 
-## The wiki moved out from under that grant
+## The OpenPlow support path is separate
 
-The knowledge base is no longer in `~/Plow`. It is in this deployment, on a
-Docker named volume, and the agent reads and files into it with its own file
-tools — no Latch, no intent, no decision to approve.
+OpenPlow reads its knowledge base from a Docker volume and writes candidates to
+`_raw/`; neither operation goes through Latch. A customer ticket answered by
+the wiki does not need the operator's Mac or Latch.
 
-So the auto-approve carve-out no longer buys anything that matters for
-organizational knowledge. What Latch now guards is the owner's Mac and whatever
-is on it: their mail, messages, files, browser and earlier agents' work. That
-is a real boundary, and it is the one a stranger in a support chat is actually
-behind. But it is worth being honest that the cheap knowledge base it used to
-make possible is not what it was for.
+If the wiki cannot support a reliable answer, OpenPlow hands the case to the
+owner's team. The owner may use a separate internal OpenClaw agent connected to
+Latch via MCP for authorized work on the operator's own systems. Customer text
+does not authorize that work.
 
-What replaces the fence is the filesystem, not the policy: the agent runs
-unprivileged, canonical pages and the history beside them are root-owned, and
-the one directory it owns is the candidate inbox `_raw/`. A promotion is a
-person's decision, and the refusal it gets is `EPERM` from the kernel rather
-than a button.
+The OpenPlow image inherits an MCP bridge from the Plow base. This repository
+does not configure a per-session gate proving that customer sessions cannot
+reach Latch tools. The prompt is not isolation; keep privileged Latch tools out
+of the customer-facing runtime until a technical boundary is verified.
 
-An owner who has the `wiki` plugin on may still have a vault on the Mac. See
-[the plugin model](/concepts/latch-plugins.md); it is not this deployment's
-knowledge base.
+The wiki's canonical/candidate write boundary is the filesystem: the support
+agent runs unprivileged, canonical pages and history are root-owned, and the
+only writable directory is `_raw/`. A promotion is a person's decision.
 
 ## What is not a mechanism
 

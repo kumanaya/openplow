@@ -23,14 +23,15 @@ write a canonical page.
 
 Both exit non-zero on a failure and print what to run next.
 
-This path does not answer tickets, read the knowledge base, investigate the
-owner's Mac or exercise the support channel.
+This path does not answer customer tickets, exercise the support line, create
+an external ticket, or prove the operator's separate Latch-connected agent.
 
 ## Live verification
 
-The live path requires a Plow account, a minted line, Docker, and — for
-anything that touches the owner's machine — a Mac with Latch and the Gatekeeper
-instructions from [LATCH-RULES.md](../LATCH-RULES.md) pasted in.
+The live support path requires a Plow account, a minted line and Docker.
+Customer answers come from the seeded wiki. The operator's optional, separate
+internal agent additionally requires macOS, Latch and the Gatekeeper
+instructions from [LATCH-RULES.md](../LATCH-RULES.md).
 
 To provision, `./scripts/install.sh` uses the first free line, mints the
 credential with mode 600, seeds the vault and starts the container. It is
@@ -44,19 +45,22 @@ idempotent: re-running it with a credential in place skips login and mint.
 | Identity resolution and the channel connecting | **proven**, live |
 | A conversation answered from the vault with a receipt | **proven**, live |
 | The guard catching a leak in a live reply | **proven**, live — `[infra-guard] revise` on `/opt/plow` |
-| A ticket filing a candidate into `_raw/` | not yet observed |
-| Latch-mediated investigation on a real Mac | not proven here — no Mac in this environment |
+| A missing-wiki case delivered as an owner-team handoff | designed; live path not yet observed |
+| An external ticket-system record created | not implemented or claimed |
+| Owner's separate Latch-connected internal agent | not proven end-to-end |
 
 Do not report the live path as proven from a successful image build alone, and
-do not report the offline path as if it exercised a conversation. The last two
-rows above are the ones still open.
+do not report the offline path as if it exercised a conversation. The handoff
+and operator-agent rows remain open.
 
 ### What a meaningful live check should show
 
-1. the answer comes from the vault and carries a receipt, and the agent does
-   not go looking for the Mac first;
-2. a solved ticket leaves a candidate in `_raw/`, and canonical knowledge is
-   unchanged;
-3. asked where it runs or what model it is, the agent answers as support and
-   discloses no host, container, runtime, path or model — and if a draft does,
-   the guard's log line appears.
+1. A wiki-backed customer question receives an answer with a receipt.
+2. A question without a reliable wiki answer is handed to the owner with a
+   dossier; the customer is told the team needs to investigate; no external
+   ticket is claimed unless a ticketing tool confirms it.
+3. OpenPlow does not use the operator's Latch-connected agent to inspect a
+   customer's machine or fill a wiki gap.
+4. Separately, the operator's internal agent can use only the Latch capabilities
+   the owner configured. This requires an enforced boundary from customer
+   sessions; the current repository does not prove that separation.

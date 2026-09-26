@@ -242,9 +242,9 @@ cat <<EOF
 
 ${BOLD}==== next ====${OFF}
 
-  ${BOLD}Gatekeeper instructions${OFF} — paste LATCH-RULES.md into Latch's
-  Gatekeeper card > Instructions, on the Audit tab. It governs what the agent
-  may do on YOUR Mac; the knowledge base does not go through it.
+  ${BOLD}Optional operator agent${OFF} — if you connect a separate internal
+  OpenClaw agent to Latch over MCP, configure Gatekeeper using LATCH-RULES.md.
+  Do not expose those tools to customer-facing sessions. See SECURITY.md.
 
   Then check it:
       ./scripts/verify.sh          the image

@@ -50,23 +50,24 @@ so by that book we should be running one cell each. We are not, and the reasons
 are specific rather than a shrug: the channel is not open, and it is gated
 above OpenClaw's layer.
 
-**What is not claimed: that a customer's turn is tool-restricted.** It is not.
-The rendered config grants the same tools to every session —
-`alsoAllow: ["read", "write", "edit", "exec", "plow_start_thread"]` — with
-`sandbox: { mode: "off" }` and no per-sender policy; the base's own test asserts
-the plugin registers *no* `before_tool_call` gate. A customer turn has the same
-`read`/`write`/`edit`/`exec` surface as the owner's, including the `/var/lib/plow`
-state volume. Plow's README says it directly: *"This agent does not isolate
-hostile users. Every turn retains its tools; the model judges authority from the
-fetched roster, trust flag, conversation and owner instructions."* The
-containment here is the container and the persona, not a capability clamp.
+**Customer turns are not tool-restricted.** The rendered config grants the same
+tools to every session — `read`, `write`, `edit`, `exec`,
+`plow_start_thread` — with `sandbox: { mode: "off" }` and no per-sender
+policy. A customer turn has the same container tool surface as the owner.
+OpenPlow's base image also carries an MCP bridge to Latch; this repository does
+not configure a per-session rule proving that customer turns cannot reach
+Latch-connected tools. A persona prohibition is not technical isolation.
 
-**OpenClaw's multi-user mode is not our isolation story.** That feature adds
-session ownership, participant history, live presence and @mentions for people
-signed into a Gateway. Its own documentation is explicit that these are
-"usability features, **not security boundaries**" — everyone who can operate an
-agent can make it do anything that agent can do. We do not enable it and do not
-cite it.
+**Do not connect operator-only Latch capabilities to this shared customer
+gateway.** Run the Latch-connected internal OpenClaw agent in a separate,
+operator-controlled boundary, or add a base-level tool policy that demonstrably
+withholds those tools from customer sessions. This repository does not yet
+implement or verify either option.
+
+**OpenClaw's multiplayer mode is not an isolation boundary.** It adds
+collaboration features, not a security boundary: everyone who can operate an
+agent can make it do what that agent can do. This repository does not currently
+enable or verify multiplayer mode.
 
 ## What actually holds the line
 
@@ -74,12 +75,12 @@ cite it.
    the Plow API — identity lookup, roster, trusted groups — above the Gateway.
    The image sets no `dmPolicy: "open"` and no `allowFrom: ["*"]`, and the Plow
    channel plugin stops the account if it discovers more than one owner DM.
-2. **Latch holds the Mac, and nothing else.** The browser is scoped per origin,
-   and `plow_history` is an append-only record of what any agent did. A ticket
-   cannot quietly run a command, open a browser, or spend the owner's money
-   without a decision. It used to also be what held the knowledge base, and it
-   no longer is — see the next section, because this is the change that moved
-   a boundary rather than drawing one.
+2. **Latch belongs to the operator's separate internal agent, not the customer
+   ticket path.** Latch mediates capabilities on the operator's own systems.
+   The repository's Plow base carries an MCP bridge, but OpenPlow does not
+   configure a separate internal agent or enforce a per-session boundary that
+   withholds its tools from customer sessions. Do not connect privileged
+   capabilities to the shared support gateway until that gap is closed.
 3. **The filesystem holds the knowledge base.** Canonical pages and the history
    are root-owned; the agent runs unprivileged and owns `_raw/`. This one is a
    kernel refusal, not a review. See below.
@@ -206,18 +207,17 @@ always `undefined`.
 
 ## What is still only the persona
 
-The boundary around *where* the agent may write is the filesystem. The rules
-about *what* goes in a candidate are not, and they have not become so:
-**no credentials, no card numbers, no account numbers, no addresses, no medical
-or financial detail, no code** — and never a customer's assertion recorded as
-an established fact. A support wiki is read by everyone who works there, forever,
-and the agent is the one writing to it. The full rules are in
-[skills/knowledge-base/SKILL.md](skills/knowledge-base/SKILL.md).
+The wiki's candidate content rules are instructions, not filesystem guarantees:
+**no credentials, card numbers, account numbers, addresses, medical or
+financial detail, no code** — and never a customer's assertion recorded as
+established fact. A support wiki is read by everyone who works there, forever.
+The full rules are in [skills/knowledge-base/SKILL.md](skills/knowledge-base/SKILL.md).
 
-So a determined agent could write a credential into a candidate. What it cannot
-do is make that candidate the record — promotion is a person's step, and the
-history shows who committed what. That is a smaller claim than the old
-arrangement made, which is the point.
+Likewise, the support instruction not to use operator tools for customer
+requests is not enforced by this repository's base configuration. The MCP
+bridge exists in the base image, and this repo has no tool gate that
+distinguishes owner sessions from customer sessions. Keep the operator's
+Latch-connected agent separate until an enforceable boundary is verified.
 
 ## Reporting a vulnerability
 

@@ -6,7 +6,7 @@
 # the knowledge base.
 FROM ghcr.io/astral-sh/uv:0.12.19@sha256:04d046b13e60d6bcec73cbc5e1cad25d680dea90c8573340950a0ac2d1aef424 AS uv
 
-# OpenPlow Support — a customer support agent for the Plow ecosystem.
+# OpenPlow Support — a customer-support agent for product teams.
 #
 # A variant image on Plow's maintained base. The base owns the boot, the channel
 # plugin, the MCP bridge to Latch, the gateway config and the usage reporter; we
@@ -78,7 +78,7 @@ ENV WIKI_PATH=/data/wiki
 # installer of this entry. Changing it means a rebuild and a re-push.
 ENV AGENT_ID=openplow-support
 ENV AGENT_NAME="OpenPlow Support"
-ENV AGENT_BLURB="OpenPlow, a customer support agent built with OpenClaw, Latch and plow-wiki. It answers with receipts, investigates through Latch when the knowledge base runs out, and files what it learns as candidate knowledge for a human to promote."
+ENV AGENT_BLURB="OpenPlow answers customer questions from the product wiki and hands unanswered cases to the owner. The owner can separately connect an internal OpenClaw agent to Latch over MCP for authorized operations."
 
 # AGENT_RUNTIME is deliberately unset here. The base sets it for us as of
 # d78e4ea, which carries 072da08d ("Send the runtime to the Agent Index on

@@ -32,13 +32,14 @@ compiler.
 What we read at runtime, and do not redistribute
 --------------------------------------------------------------------------------
 
-The `plow-wiki` skill, from https://github.com/plow-pbc/plow-wiki (Apache-2.0).
-We do not vendor it. The owner installs the `wiki` Latch plugin on their Mac, the
-plugin publishes its own `skill.md` there, and the agent reads it at runtime with
-`plow_list_skills` / `plow_read_skill` — the same path the base's `owners-mac`
-skill uses for anything the Mac publishes. If the plugin is not installed, this
-agent has no long-term memory and says so; it does not fall back to a copy of
-the skill baked into this image.
+The `plow-wiki` skill, from https://github.com/plow-pbc/plow-wiki (Apache-2.0),
+is consumed only by the operator's separate internal agent when the owner
+installs the optional `wiki` Latch plugin on their Mac. The plugin publishes
+its `skill.md` there, and that agent reads it with `plow_list_skills` /
+`plow_read_skill` — the same path the base's `owners-mac` skill uses for
+anything the Mac publishes. This runtime skill is not OpenPlow's customer
+support wiki: OpenPlow reads its deployment-owned vault and does not depend on
+the Mac plugin for customer answers.
 
 --------------------------------------------------------------------------------
 Trademarks

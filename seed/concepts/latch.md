@@ -12,9 +12,9 @@ created: 2026-09-25
 updated: 2026-09-25
 ---
 
-Latch is an MCP server that runs on the owner's Mac. Any agent that speaks MCP
-can call it. It is not an agent and it does not talk to a model — it turns tool
-arguments into an **Intent**, and a human decides.
+Latch is an MCP server that runs on the operator's Mac. The owner can connect a
+separate internal OpenClaw agent to it. Latch is not itself an agent or a model:
+it turns the connected agent's tool arguments into an **Intent** for approval.
 
 ## Its two stated ideas
 
@@ -57,20 +57,30 @@ Fifteen, and `TOOLS` in `packages/mcp-server/src/tools.ts` is authoritative.
 A secret only ever reaches a page through `plow_browser`'s `fill_secret`, never
 by being read into the model's context.
 
-## What a customer should be told when it goes wrong
+## How OpenPlow uses Latch
 
-- **A refusal is diagnosed, not guessed.** `EPERM` comes from TCC, the app's own
-  seatbelt, SIP, a locked file or a parked consent dialog. A probe battery names
-  the cause with a confidence, and the agent gets `blocked` with the verdict
-  *and* the facts.
-- **Every decision is in the audit log** at `$DOMO_HOME/device/audit.ndjson` —
-   append-only NDJSON, one event per line, one previous generation kept. The
-   agent reads the same log through `plow_history`. It has no hash chain and no
-   signature and the app can clear it, so it is evidence of what the app
-   recorded, not a tamper-evident record.
-- **Paths are canonicalised before the human sees them.** Approving `/tmp/x`
-  when it is a symlink to `~/.ssh/id_rsa` displays the key.
+OpenPlow Support does not use Latch to answer or investigate customer tickets.
+It answers from its deployment wiki; if the wiki has no reliable answer, it
+hands the case to the owner's team. The owner may use a separate internal
+OpenClaw agent, connected to Latch over MCP, for additional authorized
+operations on the operator's systems.
+
+The connection does not mean customer messages authorize those operations.
+Latch's reviewer sees the tool request and arguments, not whether an instruction
+originated from a customer. Keep the internal agent and its tools separate from
+customer-facing sessions.
+
+## Latch decisions and records
+
+- A refusal is diagnosed, not guessed. It may come from TCC, the app's
+  seatbelt, SIP, a locked file or a consent dialog.
+- Decisions are written to `$DOMO_HOME/device/audit.ndjson`; `plow_history`
+  reads the recorded history. It has no hash chain or signature and the app can
+  clear it, so it is not tamper-evident.
+- Paths are canonicalized before the human sees them. Approving a symlink
+  displays its target path.
 
 See [the approval model](/concepts/latch-approval-model.md),
 [plugins](/concepts/latch-plugins.md), and
-[the sandbox boundary, which is not quite what the card says](/skills/why-the-approval-card-understates-the-sandbox.md).
+[the sandbox boundary](/skills/why-the-approval-card-understates-the-sandbox.md).
+

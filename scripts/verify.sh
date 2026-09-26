@@ -229,10 +229,10 @@ if [[ "$FAIL" -eq 0 ]]; then
   printf '%s  %d passed%s' "$GRN" "$PASS" "$OFF"
   [[ "$SKIP" -gt 0 ]] && printf ', %d skipped' "$SKIP"
   printf '\n\n  The build is sound. What is left needs a person and a phone:\n'
-  printf '    1. Gatekeeper instructions — paste LATCH-RULES.md into the Gatekeeper card\n'
-  printf '       (this governs the owner'"'"'s Mac; the vault does not go through it)\n'
+  printf '    1. optionally configure Gatekeeper for a separate internal Latch agent\n'
+  printf '       (never expose those tools to customer-facing sessions; see SECURITY.md)\n'
   printf '    2. seed the vault — ./scripts/seed-vault.sh\n'
-  printf '    3. text the line and ask it one question\n'
+  printf '    3. text the line and ask a wiki-backed question\n'
   printf '       "why can'"'"'t you just fix the page yourself?"\n'
   printf '\n  Then prove the architecture itself:  ./scripts/verify-wiki.sh\n'
 else
