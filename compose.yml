@@ -25,6 +25,7 @@ services:
     # same volume and cannot drift apart.
     volumes:
       - state:/var/lib/plow
+      - config:/etc/plow/openclaw
       - wiki:/data
     stop_grace_period: 35s
   # Local only. This plays Plow's agent-web proxy, which sits in front of your
@@ -39,6 +40,10 @@ services:
       - ./dev/Caddyfile:/etc/caddy/Caddyfile:ro
 volumes:
   state:
+  # The base renders `$include` fragments here. Persist them with state so an
+  # image rebuild cannot leave `/var/lib/plow/openclaw.json` referencing an
+  # empty container filesystem.
+  config:
   # Named EXPLICITLY, not `<project>_wiki`, and `external` because the scripts
   # in scripts/ create and read this volume WITHOUT compose (wiki-peek,
   # wiki-import, wiki-refresh all run as plain `docker run`). A compose-owned
