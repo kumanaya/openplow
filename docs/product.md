@@ -1,80 +1,63 @@
 # Product workflow
 
-OpenPlow is the customer-facing support agent. It answers from the startup's
-canonical wiki; when the wiki does not support an answer, it hands the case to
-the owner's team for investigation. It does not use Latch to inspect a
-customer's machine.
+OpenPlow is a three-role support organization. Only Frontline is customer
+facing. The other roles are native static OpenClaw agents spawned for a case;
+they are not customer-visible chats or a free-form human handoff.
 
-## The roles and the two paths
+## Roles
 
-- **Customer** — asks a question on the configured support line.
-- **OpenPlow Support** — reads canonical wiki pages, replies with a source, or
-  sends an internal handoff dossier when it cannot answer.
-- **Owner and team** — review handoffs, make decisions, and curate canonical
-  knowledge.
-- **Operator's internal OpenClaw agent** — a separate agent the owner may
-  connect to Latch over MCP for additional authorized actions on the
-  operator's own systems. It is not the customer-facing OpenPlow session.
-- **Product knowledge** — the deployment-owned vault of runbooks, accounts,
-  known issues, incidents and decisions.
+| Role | Receives | Produces | Cannot do |
+| --- | --- | --- | --- |
+| **Frontline** | Customer message and canonical wiki | Cited answer, durable case, customer-safe verified reply | Use Latch/MCP, inspect other sessions, write wiki, send elsewhere |
+| **Investigator** | Case ID and minimum diagnostic context | Claim, verified evidence or terminal blocked/failed/human-needed outcome | Talk to customer, write wiki, spawn an agent |
+| **Curator** | Resolved durable-case ID | Sanitized `_raw/OP-*.md` candidate | Use Latch/MCP, see customer context from tool output, write/promote canonical pages |
+| **Human** | `_raw` candidate and canonical vault | Reviewed promotion and wiki maintenance | N/A |
 
-The support line and the internal agent are separate trust paths. A customer's
-message is not permission for the operator's tools. A deployment must keep
-Latch-capable internal tools unavailable to customer sessions; see
-[SECURITY.md](../SECURITY.md) for the current configuration gap.
-
-## A customer ticket
+## Customer journey
 
 1. A customer asks a question or reports a problem.
-2. OpenPlow checks the canonical wiki.
-3. If a page supports the answer, OpenPlow replies with that page as its
-   receipt.
-4. If the wiki has no reliable answer, OpenPlow prepares a dossier and hands
-   the case to the owner's team. The customer is told that the team needs to
-   investigate; no unsupported answer or resolution-time promise is made.
-5. After the team verifies an outcome, it can be shared with the customer and
-   recorded as a candidate in `_raw/`. A person reviews a candidate before it
-   becomes canonical knowledge.
+2. Frontline searches the canonical wiki.
+3. A supported answer is replied to with its source. The workflow stops.
+4. An unsupported, sensitive, or authority-bound request creates an
+   `ESCALATED` case with the problem, wiki findings, and desired outcome.
+5. Frontline spawns the static Investigator. The customer receives a brief
+   acknowledgement, not a promise or an invented external ticket number.
+6. Investigator claims the case, reads relevant knowledge, and uses Latch only
+   when an operator-authorized Mac-side workflow is necessary.
+7. Verified evidence transitions the case to `VERIFIED`. A Latch denial or a
+   required human decision is terminal and does not become a customer result.
+8. Frontline resolves only the verified case in the original Gateway session,
+   then relays its stored customer-safe summary.
+9. If the lesson is durable, Frontline spawns Curator. Curator stages a
+   generalized candidate. A human review is required before the next customer
+   can treat it as canonical knowledge.
 
-The current handoff is a message to the owner's conversation, not an
-integration that creates a record in a third-party ticketing system.
-
-## The operator's internal work
-
-Separately, the owner may connect an internal OpenClaw agent to Latch through
-MCP. That agent can request additional operations on the operator's systems,
-subject to the capabilities and approval behavior configured in Latch. This
-path supports the people operating the startup; it is not a customer
-investigation path, and customer text does not authorize its use.
-
-The repository does not yet configure or prove an isolated internal agent
-alongside the customer-facing deployment. Do not treat a prompt instruction
-alone as enforcement.
-
-## The learning loop
+## Lifecycle
 
 ```text
-Customer ─► OpenPlow ─► canonical wiki supports answer ─► cited reply
-                 │
-                 └── wiki has no answer ─► owner-team handoff
-                                                │
-                                  internal agent via MCP/Latch, if authorized
-                                                │
-                                    verified outcome / candidate in _raw/
-                                                │
-                                        human review
-                                                │
-                                      canonical knowledge
+NEW → KNOWLEDGE_CHECKED → ESCALATED → INVESTIGATING → VERIFIED → RESOLVED
+                                                               ↓
+                                                  KNOWLEDGE_CANDIDATE
+
+INVESTIGATING → BLOCKED | FAILED | NEEDS_HUMAN
 ```
 
-Canonical pages and the history are root-owned; the support agent runs
-unprivileged and writes candidates only to `_raw/`. The filesystem, not a model
-instruction, prevents it from promoting its own candidate. See
-[SECURITY.md](../SECURITY.md) and [architecture.md](architecture.md).
+No path from a terminal state reaches `RESOLVED` or
+`KNOWLEDGE_CANDIDATE`. A case is bound to its original Gateway conversation;
+a verified result cannot be used to reply to another customer.
 
-## Multiple participants
+## Latch use
 
-Customers use the support line; the owner and team handle internal handoffs
-through their operator workflow. OpenClaw multiplayer features are not
-themselves a security boundary. See [SECURITY.md](../SECURITY.md) for what the
-current deployment does and does not isolate.
+Latch is not a customer feature and is not a wiki fallback. Frontline and
+Curator have both per-agent `bundle-mcp` denies and plugin enforcement.
+Investigator may see the deployment's MCP bridge, but customer text alone is
+not authorization. The operator's Gatekeeper policy must constrain what the
+Latch reviewer permits; see [LATCH-RULES.md](../LATCH-RULES.md).
+
+## What this workflow does not claim
+
+- It does not create a third-party ticket.
+- It does not perform refunds, deletion, account changes, or other
+  authority-bound actions merely because a customer asks.
+- It does not make one Gateway safe for mutually hostile tenants.
+- It does not prove a live Plow or Latch interaction from its offline tests.

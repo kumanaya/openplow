@@ -96,6 +96,13 @@ COPY prompt/AGENTS.md /opt/plow/prompt/AGENTS.md
 # and the base's two would be the only ones loaded.
 COPY skills/ /opt/plow/skills/
 
+# The two internal roles are stored outside the workspace because the state
+# volume owns their eventual workspaces. `openplow-configure-organization`
+# copies these prompts after Plow's first boot, then persists native OpenClaw
+# agent entries through the owner-owned config surface.
+COPY agents/ /opt/plow/organization/agents/
+COPY organization/ /opt/plow/organization/
+
 # The infrastructure guard, shipped INSIDE OpenClaw's own bundled extensions.
 # That path is the load-bearing part: the base's boot owns the plugin load
 # paths, so a plugin anywhere else is dropped at first start. Copied to
@@ -122,3 +129,4 @@ COPY skills/ /opt/plow/skills/
 # says not to. A prompt is not enforcement. See plugin/infra-guard/.
 USER root
 COPY plugin/infra-guard/ /app/dist/extensions/infra-guard/
+COPY plugin/case-workflow/ /app/dist/extensions/case-workflow/

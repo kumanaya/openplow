@@ -1,95 +1,85 @@
 # Architecture
 
-OpenPlow has a customer-facing support path and an operator-only action path.
-The customer path answers from the deployment's wiki or hands the case to the
-owner's team; it does not investigate a customer's device. The operator may
-connect a separate internal OpenClaw agent to Latch over MCP for additional
-authorized work on the operator's own systems.
+OpenPlow runs one OpenClaw Gateway with three explicit agent entries. This is
+role isolation inside one Gateway, not a hostile multi-tenant deployment.
 
 ```mermaid
 flowchart TB
-  C[Customer] <--> P[Configured support line]
-  P <--> T[Channel API / transcript]
-  T --> O[OpenClaw + OpenPlow Support]
-  O --> W[Deployment vault<br/>WIKI_PATH=/data/wiki]
-  W --> K[Canonical pages, root-owned]
-  W --> R[_raw/ candidate inbox]
-  O --> H[Owner-team handoff<br/>owner conversation]
-  H --> I[Operator's separate internal OpenClaw agent]
-  I -. MCP .-> L[Latch]
-  L --> F[Operator systems<br/>owner-authorized capabilities]
-  O --> G[infra-guard in the Gateway]
-  O <--> V[Container session state]
+  C[Customer] --> F[Frontline / main]
+  F -->|read-only| W[Canonical wiki]
+  F -->|case_create| S[State volume: durable cases]
+  F -->|sessions_spawn investigator| I[Investigator]
+  I -->|case_claim / verify / block| S
+  I -. authorized MCP only .-> L[Latch on operator Mac]
+  I -->|verified result| F
+  F -->|case_resolve in origin session| C
+  F -->|sessions_spawn curator| U[Curator]
+  U -->|case_prepare_candidate| R[_raw/OP-*.md]
+  R --> H[Human review, promotion, index]
 ```
 
-The diagram describes the intended separation. The current image inherits an
-MCP bridge from the Plow base, while this repository does not configure a
-separate internal agent or prove a per-session gate that hides Latch tools from
-customer sessions. Do not connect privileged operator capabilities to a
-customer-facing runtime until that separation is enforced; the persona is not
-an access-control boundary. See [SECURITY.md](../SECURITY.md).
+## Native configuration
 
-## The stores
+`organization/openclaw.patch.json5` defines `main`, `investigator`, and
+`curator`, each with a distinct OpenClaw workspace and agent directory.
+`main.subagents.allowAgents` admits only the two static internal role IDs.
+Investigator and Curator cannot spawn children.
 
-| Store | Where | Holds |
-|---|---|---|
-| Customer chat | channel API | The actual customer conversation |
-| Session state | named volume, `/var/lib/plow` | Runtime sessions and checkpoints |
-| Owner-team handoff | owner's conversation | The support dossier; not an external ticket record |
-| Audit log | operator's Mac, via Latch | Tool intents and decisions made through Latch |
-| Vault | named volume, `/data/wiki` | Curated knowledge with sources |
+The Plow base owns portions of `openclaw.json` through includes. On first
+install `bin/openplow-configure-organization` materializes the channel-wide
+Frontline binding in owner configuration, copies internal role prompts into
+their workspaces, and applies the native `openclaw config patch`. The installer
+then restarts the Gateway. This is idempotent. The materialization is necessary
+for the pinned OpenClaw version to add internal entries without appending into a
+base-owned binding include.
 
-They are not interchangeable. The customer conversation is not automatically
-written into the vault. The Latch audit log records tool intents and decisions,
-not customer conversation text. The current handoff sends a dossier to the
-owner's conversation; this repository does not integrate an external ticket
-system.
+Internal work uses `sessions_spawn`, not sibling session discovery or arbitrary
+agent-to-agent messaging. The child receives the supplied case ID; Frontline
+retains the customer session and resolves only there.
 
-The wiki volume is declared `external` on purpose. Maintenance scripts access
-it with plain `docker run`, without Compose, and `docker compose down -v` cannot
-delete organizational knowledge owned by the deployment. The Compose project
-name is pinned so a checkout rename cannot orphan the deployment's volumes.
+## Durable cases
 
-## The wiki write boundary
+`case-workflow` is an auto-discovered Gateway plugin. It stores JSON case
+records and NDJSON transition events in `/var/lib/plow/cases`, the persistent
+state volume. Atomic replace writes and an in-process sequence lock make case
+IDs and transitions durable within the Gateway process.
 
-`/data/wiki` is root-owned and the support container runs as an unprivileged
-user. The agent can read canonical pages and write only to `_raw/`; it cannot
-promote a candidate into canonical knowledge. The kernel returns `Permission
-denied`, and that refusal is the boundary, not a prompt.
+| Transition | Authorized role | Required condition |
+| --- | --- | --- |
+| `NEW → KNOWLEDGE_CHECKED → ESCALATED` | Frontline | Canonical wiki status is `unresolved` |
+| `ESCALATED → INVESTIGATING` | Investigator | `case_claim` |
+| `INVESTIGATING → VERIFIED` | Investigator | Root cause, remediation, evidence, verification, safe summary |
+| `INVESTIGATING → BLOCKED/FAILED/NEEDS_HUMAN` | Investigator | Terminal reason |
+| `VERIFIED → RESOLVED` | Frontline | Gateway session equals the stored origin session |
+| `RESOLVED → KNOWLEDGE_CANDIDATE` | Curator | Investigator marked lesson durable |
 
-```text
-/data/wiki/concepts/…    root-owned   support agent cannot write
-/data/wiki/_raw/         agent-owned  candidate inbox
-```
+The plugin obtains customer identity and conversation from Gateway hook context,
+overwriting model-provided values. Candidate tool output deliberately omits
+customer and conversation data.
 
-Promotion is a person's decision, made by running maintenance as root.
-`scripts/verify-wiki.sh` verifies persistence and the filesystem write boundary.
+## Tool and data boundaries
 
-## Enforcement, and where it lives
+| Role | Enforced deny surface | Explicitly retained |
+| --- | --- | --- |
+| Frontline | `bundle-mcp`, shell/process, browser/node/gateway, writes, direct messages, session discovery/history/send | Wiki reads; static `sessions_spawn`; case create/resolve |
+| Investigator | Local writes, shell/process, browser/node/gateway, direct messages, session discovery/send/spawn | Case claim/verify/block; MCP including Latch |
+| Curator | `bundle-mcp`, shell/process, browser/node/gateway, writes, messages, session discovery/send/spawn | Candidate staging tool only |
 
-| Boundary | Enforces | Notes |
-|---|---|---|
-| Persona and support skills | Wiki-first answers; handoff when the wiki lacks an answer | Instructions only |
-| `infra-guard` plugin | Blocks infrastructure identity leaks | Gateway checks; not an MCP permission filter |
-| Vault ownership | Prevents canonical wiki writes by the support agent | Kernel-enforced |
-| Latch | Gates actions of an agent connected through its MCP server | Operator's own systems; approval behavior depends on Latch configuration |
+The plugin's `before_tool_call` hook repeats these role checks. It confines
+Frontline and Curator reads to `$WIKI_PATH`, blocks their MCP access including
+the MCP bundle, and prevents the Frontline tool from resolving another
+conversation.
 
-Latch is not in the customer-answer path. The operator may use a separate
-internal OpenClaw agent through Latch for actions outside support's scope.
-The OpenPlow image's inherited MCP bridge and broad session tools make the
-separation a deployment requirement, not a guarantee this repository currently
-enforces. The base must be configured or split so customer sessions cannot
-invoke operator-only tools before those tools are connected.
+The wiki remains a second boundary: canonical `/data/wiki` and its history are
+root-owned; `_raw/` is the controlled candidate inbox. Curator never gets a
+generic filesystem write tool. Human promotion is outside the Gateway.
 
-## Components
+## Limit
 
-| Component | Responsibility |
-|---|---|
-| OpenPlow Support | Customer persona, support and knowledge-base skills, vault seed, guard plugin and setup scripts |
-| OpenClaw | Agent runtime in the Plow base image |
-| Plow | Default customer support line and channel integration |
-| plow-wiki | Vault CLI: validate, index, snapshot, import |
-| Latch | MCP server and capability/approval boundary for the operator's separate internal agent |
-
-The default customer integration is Plow. A product team can import its own
-knowledge corpus with `scripts/seed-vault.sh --from`.
+Separate workspaces, configured agent IDs, per-agent tool denials, and plugin
+checks limit customer-controlled model turns. They do **not** make this one
+Gateway a security boundary against a compromised Gateway administrator,
+malicious plugin, or container escape. Deploy separate hardened Gateways for
+mutually hostile tenants or separate operator credentials. Latch remains the
+Mac-side authorization and capability boundary; its reviewer decision is not
+proof that a customer was authorized.

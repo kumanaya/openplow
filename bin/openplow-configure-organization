@@ -1,0 +1,29 @@
+#!/bin/sh
+# Install OpenPlow's durable three-agent configuration after Plow boot has
+# rendered its owned includes. Materialize the channel-wide Frontline binding
+# in owner configuration so OpenClaw can register internal agents.
+set -eu
+
+STATE_DIR="${OPENCLAW_STATE_DIR:-/var/lib/plow}"
+CONFIG_PATH="${OPENCLAW_CONFIG_PATH:-$STATE_DIR/openclaw.json}"
+ORG_ROOT="/opt/plow/organization"
+
+
+
+[ -f "$CONFIG_PATH" ] || {
+  echo "openplow-configure-organization: $CONFIG_PATH does not exist yet; let Plow boot once first." >&2
+  exit 1
+}
+node "$ORG_ROOT/materialize-main-binding.mjs" "$CONFIG_PATH"
+
+
+for role in investigator curator; do
+  workspace="$STATE_DIR/agents/$role/workspace"
+  mkdir -p "$workspace"
+  cp "$ORG_ROOT/agents/$role/AGENTS.md" "$workspace/AGENTS.md"
+done
+
+openclaw config patch --stdin < "$ORG_ROOT/openclaw.patch.json5"
+
+echo "openplow-configure-organization: Frontline, Investigator and Curator are configured"
+echo "openplow-configure-organization: restart the agent to load the new roster"

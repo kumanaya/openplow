@@ -1,0 +1,18 @@
+{
+  "id": "case-workflow",
+  "name": "OpenPlow case workflow",
+  "description": "Durable, role-bound support cases connecting Frontline, Investigator and Curator.",
+  "enabledByDefault": true,
+  "activation": { "onStartup": true },
+  "contracts": {
+    "tools": [
+      "case_create",
+      "case_claim",
+      "case_verify",
+      "case_block",
+      "case_resolve",
+      "case_prepare_candidate"
+    ]
+  },
+  "configSchema": { "type": "object", "additionalProperties": false }
+}

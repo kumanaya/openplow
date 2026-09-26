@@ -76,8 +76,8 @@ if docker image inspect "$IMG" >/dev/null 2>&1; then
 
   sect "What the image actually contains"
   skills=$(docker run --rm --network none "$IMG" ls -1 /opt/plow/skills 2>/dev/null | tr '\n' ' ')
-  want="google-workspace handoff knowledge-base owners-mac support-desk "
-  if [[ "$skills" == "$want" ]]; then pass "the five skills, ours beside the base's two"
+  want="case-workflow google-workspace knowledge-base owners-mac support-desk "
+  if [[ "$skills" == "$want" ]]; then pass "the five skills, including durable case workflow"
   else fail "skills are '$skills'" "we need: $want  — a skills/skills nesting is a SILENT failure"; fi
 
   docker run --rm --network none "$IMG" test -e /opt/plow/skills/skills 2>/dev/null \
@@ -85,10 +85,10 @@ if docker image inspect "$IMG" >/dev/null 2>&1; then
     || pass "no skills/skills nesting"
 
   first=$(docker run --rm --network none "$IMG" head -1 /opt/plow/prompt/AGENTS.md 2>/dev/null)
-  if [[ "$first" == "# OpenPlow" ]]; then
-    pass "our persona replaced the base's, and it is OpenPlow"
+  if [[ "$first" == "# OpenPlow Frontline" ]]; then
+    pass "our Frontline persona replaced the base's"
   else
-    fail "persona first line is '$first'" "it should be '# OpenPlow' - check Dockerfile:32"
+    fail "persona first line is '$first'" "it should be '# OpenPlow Frontline' - check prompt/AGENTS.md"
   fi
 
   # Identity is a product claim, so it is asserted rather than assumed. A
@@ -181,6 +181,19 @@ if [[ -d "$ROOT/plugin/infra-guard" ]]; then
   else
     fail "infra-guard/openclaw.plugin.json is missing" "the plugin cannot be discovered without it"
   fi
+
+  if docker run --rm --network none "$IMG" test -f /app/dist/extensions/case-workflow/index.js 2>/dev/null \
+    && docker run --rm --network none "$IMG" test -f /app/dist/extensions/case-workflow/openclaw.plugin.json 2>/dev/null; then
+    pass "case-workflow plugin and manifest are inside the image"
+  else
+    fail "case-workflow plugin is missing" "copy plugin/case-workflow/ to /app/dist/extensions/case-workflow/"
+  fi
+  if docker run --rm --network none --tmpfs /var/lib/plow --entrypoint node "$IMG" \
+      /app/openclaw.mjs plugins list 2>/dev/null | grep -q 'stock:case-workflow/index.js'; then
+    pass "the Gateway discovers case-workflow by itself"
+  else
+    fail "the Gateway does not discover case-workflow" "check its manifest and COPY path"
+  fi
   # Discovery, not a cache file. The base scans /app/dist/extensions/ at boot,
   # and /var/lib/plow is the state volume — so a registry cache written at
   # build time is masked before the Gateway starts. Check the thing that
@@ -194,9 +207,9 @@ if [[ -d "$ROOT/plugin/infra-guard" ]]; then
   fi
   if command -v node >/dev/null 2>&1; then
     if (cd "$ROOT" && node --test test/ >/dev/null 2>&1); then
-      pass "the guard's rules pass their suite"
+      pass "guard and durable-case tests pass"
     else
-      fail "the guard's rule tests fail" "cd $ROOT && node --test test/"
+      fail "repository tests fail" "cd $ROOT && node --test test/"
     fi
   else
     skip "node is not on the host" "the rules run inside the Gateway; check them with: node --test test/"
@@ -228,13 +241,13 @@ printf '\n%s──────────────────────�
 if [[ "$FAIL" -eq 0 ]]; then
   printf '%s  %d passed%s' "$GRN" "$PASS" "$OFF"
   [[ "$SKIP" -gt 0 ]] && printf ', %d skipped' "$SKIP"
-  printf '\n\n  The build is sound. What is left needs a person and a phone:\n'
-  printf '    1. optionally configure Gatekeeper for a separate internal Latch agent\n'
-  printf '       (never expose those tools to customer-facing sessions; see SECURITY.md)\n'
+  printf '\n\n  The build is sound. Next:\n'
+  printf '    1. optionally configure Gatekeeper for the Investigator Latch workflow\n'
+  printf '       (Frontline and Curator are MCP-denied; see SECURITY.md)\n'
   printf '    2. seed the vault — ./scripts/seed-vault.sh\n'
-  printf '    3. text the line and ask a wiki-backed question\n'
+  printf '    3. run ./scripts/verify-organization.sh and ./scripts/verify-wiki.sh\n'
+  printf '    4. text the line and ask a wiki-backed question\n'
   printf '       "why can'"'"'t you just fix the page yourself?"\n'
-  printf '\n  Then prove the architecture itself:  ./scripts/verify-wiki.sh\n'
 else
   printf '%s  %d passed, %d failed%s\n' "$RED" "$PASS" "$FAIL" "$OFF"
   [[ "$SKIP" -gt 0 ]] && printf '  %d skipped\n' "$SKIP"

@@ -216,6 +216,19 @@ step "Start the agent"
 docker compose -f "$ROOT/compose.yml" up --build -d \
   || die "docker compose failed. Try:  docker compose logs agent"
 ok "container started"
+step "Configure the support organization"
+for attempt in {1..30}; do
+  if docker compose -f "$ROOT/compose.yml" exec -T agent test -f /var/lib/plow/openclaw.json; then
+    break
+  fi
+  sleep 1
+done
+docker compose -f "$ROOT/compose.yml" exec -T agent /opt/plow/bin/openplow-configure-organization \
+  || die "could not configure the Frontline, Investigator and Curator roster"
+docker compose -f "$ROOT/compose.yml" restart agent \
+  || die "could not restart the agent with the organization configuration"
+ok "Frontline, Investigator and Curator configured"
+
 # Idempotent: it adds what is missing and never overwrites an existing page
 # without --force, so running it on a re-install is safe and does nothing.
 if "$ROOT/scripts/seed-vault.sh" >/dev/null; then
@@ -242,9 +255,9 @@ cat <<EOF
 
 ${BOLD}==== next ====${OFF}
 
-  ${BOLD}Optional operator agent${OFF} — if you connect a separate internal
-  OpenClaw agent to Latch over MCP, configure Gatekeeper using LATCH-RULES.md.
-  Do not expose those tools to customer-facing sessions. See SECURITY.md.
+  ${BOLD}Latch${OFF} — connect the deployed Plow line to Latch only when a
+  Mac-side operator workflow is required. The Investigator alone can invoke
+  the MCP tools; Gatekeeper policy lives in LATCH-RULES.md.
 
   Then check it:
       ./scripts/verify.sh          the image
