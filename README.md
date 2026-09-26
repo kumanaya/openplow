@@ -10,7 +10,7 @@
 
 **Answers from the product wiki. Hands unanswered cases to the team.**
 
-`OpenClaw` × `Plow Wiki` × team handoff
+`OpenClaw` × `Plow Wiki` × team handoff × `Latch`
 
 [80-second explainer](assets/openplow-explainer.mp4) — illustrative film, not
 proof of a live handoff or an enforced Latch boundary.
