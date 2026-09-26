@@ -50,6 +50,22 @@ The internal handoff currently means a dossier delivered to the owner's
 conversation. This repository does not claim an integration that creates a
 record in an external ticketing system.
 
+## Illustrations
+
+The illustrations below describe the intended support workflow; they are not
+screenshots or evidence of a live deployment.
+
+<p align="center">
+  <img src="assets/01.png" alt="Illustration of a customer asking OpenPlow for support" width="800">
+</p>
+
+<p align="center">
+  <img src="assets/04.png" alt="Illustration of a solved case becoming reviewed canonical wiki knowledge" width="800">
+</p>
+
+The customer-facing session answers from the wiki or prepares a handoff. A
+person reviews any candidate knowledge before it becomes canonical.
+
 ## What it does today
 
 | Behaviour | Status |
