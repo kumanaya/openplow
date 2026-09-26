@@ -97,8 +97,8 @@ else
   fail "canonical pages are not readable by the agent" "they must be world-readable"
 fi
 
-# ─────────────────────────────────────────── TEST 6 — CANDIDATE WRITE
-sect "TEST 6 — a solved case leaves a candidate"
+# ───────────────────────────────────── TEST 6 — CANDIDATE INBOX BOUNDARY
+sect "TEST 6 — the candidate inbox is persistent and reviewable"
 CANDIDATE="$VOL-candidate.md"
 if as_agent sh -c "cat > \"\$WIKI_PATH/_raw/\"$(basename "$CANDIDATE") <<'EOF'
 ---
@@ -207,7 +207,7 @@ doccheck() { # file, pattern, what it must say
     fail "$3" "$1 no longer says it"
   fi
 }
-doccheck SECURITY.md 'not (protected|enforced) by Latch' "SECURITY.md says Latch no longer guards the wiki"
+doccheck SECURITY.md 'does not guard' "SECURITY.md says Latch does not guard the deployment wiki"
 doccheck SECURITY.md 'root-owned' "SECURITY.md names the mechanism that replaced it"
 doccheck prompt/AGENTS.md 'WIKI_PATH|_raw' "the persona still describes the candidate inbox"
 doccheck skills/knowledge-base/SKILL.md 'WIKI_PATH' "the knowledge-base skill reads the vault locally"
@@ -220,8 +220,8 @@ fi
 
 # ───────────────────────────── what genuinely cannot be checked here
 sect "What this script cannot prove"
-skip "customer ticket handoff" "needs a Plow account and live support conversation."
-skip "operator's separate Latch agent" "needs an owner-configured internal agent and Mac."
+skip "customer durable-case conversation" "needs a Plow account and live support conversation."
+skip "Investigator Latch operation" "needs owner authorization, an internal case, and a Mac."
 skip "the agent's live answer quality" "needs a Plow account and a phone. The offline checks prove the architecture, not the conversation."
 
 # ───────────────────────────────────────────────────────────────────── summary

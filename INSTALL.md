@@ -1,34 +1,13 @@
 # Install
 
-Written against Plow's own documentation. The image in this repository has been
-built, its offline boot probe passes, and the architecture checks pass; the
-`plow-agents` steps have not been run against a live account from here.
+OpenPlow needs Docker, `python3`, a Plow account with a support line, and a
+POSIX filesystem for the credential file. On Windows, run the scripts from WSL
+with Docker Desktop WSL integration enabled.
 
-**Docker can run the support container anywhere it is supported. Latch requires
-macOS; installer credentials require a POSIX filesystem.** These are separate:
+Latch and a Mac are optional. They are required only when the internal
+Investigator must perform a real operator-authorized Mac-side workflow.
 
-- The customer-support wiki is a Docker volume and does not need a Mac or Latch.
-- The operator's optional internal OpenClaw agent can connect to Latch over
-  MCP for authorized work on the operator's systems. Latch has no Windows or
-  Linux build.
-- `plow-agents` writes credentials only when the file is mode 0600. On Windows,
-  NTFS reports every file as 0777, so use WSL's POSIX filesystem for install.
-
-On Windows, run the scripts from **WSL**, which has a POSIX filesystem. The
-installer checks this before it asks you for anything and tells you if it is
-wrong, so you find out in a second rather than ninety seconds after you have
-texted an activation code.
-
-## What you need
-
-| | |
-|---|---|
-| **A Plow line** | A number your customers can text. From [plow.co](https://plow.co). |
-| **`plow-agents`** | Not an installed package — it is a git clone you run with `python3`. `install.sh` clones it for you. |
-| **Docker** | Runs the customer-facing support agent and its wiki volume. |
-| **macOS with Latch** | Optional; only for the operator's separate internal agent, not for customer support answers. |
-
-## The short version
+## Quick install
 
 ```sh
 git clone https://github.com/kumanaya/openplow
@@ -36,236 +15,102 @@ cd openplow
 ./scripts/install.sh
 ```
 
-That clones `plow-agents`, signs you in (one phone SMS), picks the first free
-line, mints it, seeds the knowledge base, starts Compose, and prints the line's
-name and number. It is safe to re-run: it skips what is already done.
+The installer:
+
+1. checks Docker, Python, and credential-file mode support;
+2. clones `plow-agents`, logs in through its one SMS activation step, and mints
+   the first free line unless told otherwise;
+3. creates the external `openplow-wiki` volume and starts Compose;
+4. waits for the base to render its owned OpenClaw configuration;
+5. runs `bin/openplow-configure-organization`, which creates the Frontline,
+   Investigator, and Curator native agent entries, then restarts the Gateway;
+6. seeds the wiki without overwriting existing canonical pages.
+
+Re-running the installer is safe: it reuses an existing credential, applies the
+organization configuration again, and only imports missing seed pages.
 
 ```sh
-./scripts/install.sh --line Willow   # a specific line, by name or uid
-./scripts/install.sh --new-line      # provision another line (another SMS)
+./scripts/install.sh --line Willow   # select a specific free line
+./scripts/install.sh --new-line      # provision another line; asks for SMS
 ```
 
-The installer will not create a second line unless you ask, and will not mint a
-line that already has an assistant. If every line is taken it says which ones
-are, and stops.
-
-## Windows: run it from WSL
+## Verify the installed source
 
 ```sh
-wsl
-cd /mnt/c/Users/<you>/path/to/openplow
-./scripts/install.sh
+./scripts/verify.sh
+./scripts/verify-organization.sh
+./scripts/verify-wiki.sh
 ```
 
-In Docker Desktop, turn on **Settings → Resources → WSL Integration** first, so
-the WSL shell can reach `docker`. The vault, the CLI and Compose then all work
-unchanged; `install.sh` tells you the exact path if you run it from the wrong
-shell.
+`verify-organization.sh` is the configuration check: it uses the real pinned
+image and OpenClaw CLI against disposable volumes, validates the patched
+configuration, lists `main`, `investigator`, and `curator`, then boots it again.
+It does not contact Plow or Latch.
 
-## Optional operator agent: configure Latch separately
+## Seed product knowledge
 
-OpenPlow's customer support path needs no Latch. If the owner also operates a
-separate internal OpenClaw agent and connects it to Latch over MCP, configure
-the Gatekeeper instructions for that internal agent using
-[LATCH-RULES.md](LATCH-RULES.md). Do not expose its Latch tools to customer
-sessions. The base image inherits an MCP bridge, and this repository does not
-yet configure a per-session boundary that proves this separation; see
-[SECURITY.md](SECURITY.md).
-
-## If you prefer the steps by hand
-
-`plow-agents` is a git clone, not a binary, so it is run through `python3` and
-the path has to be spelled out. The commands below set one variable rather than
-defining a shell function: a function like `plow() { … }` lives in the one
-terminal you typed it into, and every new shell — a second terminal, a `docker
-exec`, a colleague following along — fails with `plow: command not found` and
-no explanation.
+The default seed is this repository's example corpus. Import another validated
+corpus before exposing the line to customers:
 
 ```sh
-# 1. the CLI
-git clone --depth 1 https://github.com/plow-pbc/plow-agents.git .tools/plow-agents
-CLI=.tools/plow-agents/bin/plow-agents
+./scripts/seed-vault.sh --from ~/your/vault
+./scripts/seed-vault.sh --check --from ~/your/vault
+```
 
-# 2. sign in — INTERACTIVE, needs a phone. See below.
-python3 "$CLI" login
+The vault is the `openplow-wiki` external Docker volume. It outlives Compose
+rebuilds and `docker compose down -v`. Canonical pages are root-owned; human
+maintenance promotes `_raw/OP-*.md` candidates.
 
-# 3. see your lines. TSV: uid, name, number, status
-python3 "$CLI" lines
+## Configure Latch when needed
 
-# 4. mint the first FREE one, by uid from step 3. Writes ./plow-credentials
-python3 "$CLI" mint <uid>
+Do this only if the Investigator needs Latch:
 
-# 5. seed the vault, then start
+1. Connect the deployed Plow line's MCP bridge to the operator's Latch setup.
+2. Apply [LATCH-RULES.md](LATCH-RULES.md) to Latch Gatekeeper.
+3. Keep the requested capability narrow and operator-authorized.
+4. Run a live acceptance check from [docs/verification.md](docs/verification.md).
+
+Frontline and Curator are denied the MCP bundle by native configuration and the
+Gateway plugin. Do not interpret that as protection against a compromised
+Gateway administrator; use separate hardened Gateways for hostile tenants.
+
+## Manual deployment
+
+If credentials already exist:
+
+```sh
+docker volume create openplow-wiki
+docker compose up --build -d
+until docker compose exec -T agent test -f /var/lib/plow/openclaw.json; do sleep 1; done
+docker compose exec -T agent /opt/plow/bin/openplow-configure-organization
+docker compose restart agent
 ./scripts/seed-vault.sh
-docker compose up --build
 ```
 
-`CLI` is a plain variable, so it survives in this shell and is re-declared by
-one line in the next one. If you would rather not retype it, put the export in
-your shell profile:
+Do not edit base-owned OpenClaw includes by hand. The configurator materializes
+the required Frontline binding in owner configuration and applies
+`organization/openclaw.patch.json5` through `openclaw config patch`.
 
-```sh
-export OPENPLOW_CLI=.tools/plow-agents/bin/plow-agents   # adjust to your path
-```
+## Operation
 
-Do not run `docker compose up` before minting: compose will not create the
-credential file for you, and the container boots with no token and parks
-itself waiting for one. When you have minted by hand, run
-`./scripts/announce-line.sh` to print this agent's line name and number rather
-than reading them out of the `lines` table — that table lists every line on the
-account, not just this agent's.
+- Dashboard: <http://localhost:3001>. Anyone with local dashboard access is an
+  administrator; do not publish it.
+- Logs: `docker compose logs -f agent`.
+- Inspect native roster:
+  `docker compose exec -T agent openclaw agents list`.
+- Reapply after an image upgrade:
+  `docker compose exec -T agent /opt/plow/bin/openplow-configure-organization && docker compose restart agent`.
 
-### `plow login` needs a human
+## Failure handling
 
-This is the step that cannot be automated, and it is why this document cannot
-hand you a finished agent. Run it in the foreground, in a real terminal — it
-reads from stdin. It prints two lines:
+- **No wiki answer:** Frontline creates a durable case. It does not invent an
+  external ticket or operate a customer system.
+- **Latch denial/unavailability:** Investigator records `BLOCKED`; do not retry
+  via another tool path.
+- **Canonical write denied:** expected. A human reviews and promotes the
+  candidate using the deployment's wiki maintenance process.
+- **Organization configuration fails:** inspect
+  `docker compose logs agent`, rerun the configurator after the base has booted,
+  and run `./scripts/verify-organization.sh` against the rebuilt image.
 
-```
-Plow Activate: <code>
-<destination number>
-```
-
-Show both to the owner, they relay them to Plow by SMS, and wait for them to
-reply **`feito`**. The script then continues. Everything before this point can
-be scripted; this part is a person on a phone.
-
-### Which line to mint
-
-`lines` prints TSV — `uid`, `name`, `number`, `status` — where `status` is
-`free` or the uid of the agent already on that line. Mint the first **free**
-one. If every line already has an assistant, stop and ask the owner which to
-free; do not create a second line on your own initiative.
-
-```sh
-python3 "$CLI" lines | awk -F '\t' 'NR > 1 && $4 == "free" { print $1, $2, $3 }'
-```
-
-`plow-credentials` holds `PLOW_AGENT_TOKEN`, the credential the container boots
-with. It is in `.gitignore`; treat it like a password.
-
-### The dashboard, and who it is for
-
-Open <http://localhost:3001> and text the line number from your phone.
-
-`localhost:3001` is the dashboard, and **anyone who can reach it is admin of
-this agent**. It is published to loopback only and the proxy in `dev/Caddyfile`
-refuses a foreign browser `Origin`, but it is a dev convenience, not a boundary
-to rely on.
-
-`docker compose down` keeps the state volume and the knowledge base. `down -v`
-does not touch either: the wiki volume is declared `external`, so a teardown
-cannot reach organizational knowledge. The conversation itself is on the Plow
-side and comes back with it.
-
-## First run
-
-1. **Put a knowledge base under it.** It does not start empty. The vault is a
-   Docker volume belonging to this deployment, so seeding is an import rather
-   than a `cp` into a home folder, and it does not matter whether the Mac is
-   awake:
-
-   ```sh
-   # A. this repo's pages: Plow, Latch, plow-wiki, the Agent Index
-   ./scripts/seed-vault.sh
-
-   # B. a wiki you already have
-   ./scripts/seed-vault.sh --from ~/some/other/vault
-   ```
-
-   The import creates the vault if it is not there, copies the pages, then runs
-   `validate` → `index` → `snapshot` inside the image. If validation fails it
-   stops and names the pages, and it does **not** index or commit a tree it
-   could not validate. Existing pages are never overwritten without `--force`;
-   `--check` shows what would change and touches nothing.
-
-   To see what you have:
-
-   ```sh
-   docker run --rm --user root -v openplow-wiki:/data \
-     openplow-support:local /opt/plow/bin/wiki-peek
-   ```
-
-2. **Text the line.** Any message starts the conversation; there is no setup
-   greeting. Try *"why can't you just fix the page yourself?"* — it should be
-   answered from the vault, with a source, without touching the Mac.
-3. **Let a real ticket in.** `docker compose logs -f agent` shows every turn and
-   every tool call.
-
-## Migrating from an older `~/Plow/wiki`
-
-If you ran this before the knowledge base moved into the deployment, your vault
-is still on your Mac at `~/Plow/wiki`, with its history beside it at
-`~/Plow/wiki.git`. **Nothing here deletes either of them.** This is the whole
-migration:
-
-```sh
-./scripts/seed-vault.sh --check --from ~/Plow/wiki    # see what would come across
-./scripts/seed-vault.sh --force --from ~/Plow/wiki    # do it
-```
-
-What that does, in order: copies every page into the volume, re-asserts the
-ownership contract, validates the result against the vault's own schemas,
-rebuilds the index, and commits — so the import becomes the first commit of the
-new history, and `wiki history <page>` works from that moment on.
-
-What it does **not** do: copy the old git history, and touch
-`~/Plow/wiki` or `~/Plow/wiki.git` in any way. They stay where they are, as the
-record of where the knowledge came from. The new history starts at the import.
-
-Afterwards there is exactly one authoritative store. The agent no longer reads
-`~/Plow/wiki` — nothing in its skills or persona points there any more, and
-crossing to the Mac to consult a copy of knowledge it already has locally would
-be a bug. You can uninstall Latch's `wiki` plugin if you like; it is no longer
-part of how this works, and leaving it installed only means you have an old
-folder on your Mac.
-
-| You text | It does |
-|---|---|
-| A customer question covered by the wiki | answers from the canonical page and gives the receipt |
-| A question the wiki does not answer | sends a handoff dossier to the owner's conversation; no external ticketing integration is claimed |
-| "wikify" | validates the wiki, lists `_raw/` candidates, and tells the owner how to refresh |
-| An internal action | belongs to the operator's separate Latch-connected agent, not the customer-support line |
-
-## When something is wrong
-
-- **"I can't reach the knowledge base."** The deployment was never seeded, or
-  the volume is not mounted. Run `./scripts/seed-vault.sh`, and check it with
-  `wiki-peek` as shown above. This is a deployment problem, not a "wake the
-  Mac" problem — the vault does not live there.
-- **Latch is unavailable.** Customer support still answers questions covered by
-  the wiki. An unanswered customer case remains with the owner's team; do not
-  retry through OpenPlow or claim the customer investigation happened. Only the
-  operator's separate internal agent loses its Latch capabilities while Latch is
-  disconnected.
-- **"I can't edit that page."** Not an error. Promotion is a person's step; the
-  vault refuses the write. Move the candidate yourself and run
-  `docker compose run --rm --user root agent /opt/plow/bin/wiki-refresh`.
-- **Answers with no receipt.** That is a real answer meaning "I did not know and
-  here is what I checked" — but if it happens constantly, the knowledge base is
-  thin and the next few tickets are the ones that fill it.
-- **A wrong answer.** `wiki history <page>` shows every commit that touched that
-  page, in the same volume. Fix the page; the next answer will be right.
-- **Something is wrong and the checks can prove it.**
-  `./scripts/verify-wiki.sh` seeds a scratch volume, cuts the network, destroys
-  a container and tries to attack the vault as the agent. It never touches your
-  knowledge.
-
-## Publishing on the Agent Index
-
-`scripts/register.sh` publishes or edits this agent's page; it is idempotent
-against a slug you own.
-
-```sh
-docker compose up -d
-AGENT_VIDEO=<youtube-video-id> AGENT_LOGO=./logo.png \
-AGENT_INSTALL_URL="https://github.com/<you>/openplow/blob/main/INSTALL.md" \
-  scripts/register.sh
-
-scripts/publish-story.sh --tags          # tags already in use; reuse one
-scripts/publish-story.sh <slug> <title> <body> <tag>
-```
-
-`--video` takes a **YouTube video id**, not a URL. Both scripts run the client
-already inside the image, at a pinned commit, rather than downloading a second
-copy to the host.
+See [SECURITY.md](SECURITY.md) for the trusted-boundary assumptions.

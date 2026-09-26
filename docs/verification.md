@@ -1,66 +1,56 @@
 # Verification
 
-There are two different verification paths. They should not be confused, and
-neither should be reported as the other.
+Offline checks and a live support interaction prove different things. Report
+only the one actually exercised.
 
-## Offline verification
-
-Offline means the image and the container, not a usable support deployment. It
-requires no Plow account, no Latch and no network.
+## Deterministic local checks
 
 ```sh
-./scripts/verify.sh      # 27 checks: image, volume, prompt, guard, seed, live
-./scripts/verify-wiki.sh # 33 checks: persistence and the write boundary
+node --test test/
+./scripts/verify.sh
+./scripts/verify-organization.sh
+./scripts/verify-wiki.sh
 ```
 
-`verify.sh` needs an image; build one first with
-`docker compose build agent`. It checks that the container assembles the
-persona, the skills and the guard plugin correctly, that the wiki volume exists
-and is mounted where the Dockerfile says, and that the guard's rulebook still
-passes its own suite. `verify-wiki.sh` proves the property the whole design
-rests on: knowledge survives a container being deleted, and the agent cannot
-write a canonical page.
+| Check | Evidence |
+| --- | --- |
+| `node --test test/` | Case lifecycle rules, concurrent IDs, Gateway provenance overwrite, origin-session resolution, terminal Latch denial, candidate staging, and role tool policy |
+| `verify.sh` | Image build, offline boot, copied skills/prompts/plugins, plugin discovery, wiki mount/ownership, and all repository tests |
+| `verify-organization.sh` | Real pinned image offline bootstrap, actual `openclaw config patch`, schema validation, three-agent listing, and post-patch restart |
+| `verify-wiki.sh` | Persistent volume behavior plus canonical wiki writes refused to the agent user |
 
-Both exit non-zero on a failure and print what to run next.
+`verify-organization.sh` uses disposable Docker volumes for the state and the
+base-owned configuration includes, deleting both on exit. The duplicate include
+mount reproduces two boot phases in separate short-lived containers; production
+uses one running container and the installer performs the same steps in it.
 
-This path does not answer customer tickets, exercise the support line, create
-an external ticket, or prove the operator's separate Latch-connected agent.
+These checks do **not** send a customer message, authenticate a Plow line,
+connect a Mac to Latch, or prove the result of an approval decision.
 
-## Live verification
+## Live acceptance check
 
-The live support path requires a Plow account, a minted line and Docker.
-Customer answers come from the seeded wiki. The operator's optional, separate
-internal agent additionally requires macOS, Latch and the Gatekeeper
-instructions from [LATCH-RULES.md](../LATCH-RULES.md).
+Requires a minted Plow line, Docker, a seeded wiki, and—only for an actual
+investigation—an operator Mac with Latch and its Gatekeeper policy.
 
-To provision, `./scripts/install.sh` uses the first free line, mints the
-credential with mode 600, seeds the vault and starts the container. It is
-idempotent: re-running it with a credential in place skips login and mint.
+1. Send a question supported by a canonical wiki page. Confirm a cited reply
+   and no case.
+2. Send a question absent from the wiki. Confirm Frontline creates a case and
+   tells the customer investigation is needed; do not accept an external-ticket
+   claim.
+3. Observe the configured Investigator claim the case. If Latch is used,
+   confirm the operation matches an explicit operator authorization and inspect
+   the Latch decision.
+4. Confirm `case_verify` contains evidence and a customer-safe summary.
+5. Confirm Frontline calls `case_resolve` in the original customer session
+   before replying. Try no cross-customer resume.
+6. If the lesson is durable, confirm Curator creates only `_raw/OP-*.md`; have
+   a human validate, promote, and index the page.
+7. Confirm Frontline and Curator cannot see or invoke Latch tools and cannot
+   send to another conversation.
 
-### What is proven here, and what is not
+## Current evidence boundary
 
-| | |
-|---|---|
-| Image, volume, write boundary, prompt, guard plugin | **proven**, 60 checks |
-| Identity resolution and the channel connecting | **proven**, live |
-| A conversation answered from the vault with a receipt | **proven**, live |
-| The guard catching a leak in a live reply | **proven**, live — `[infra-guard] revise` on `/opt/plow` |
-| A missing-wiki case delivered as an owner-team handoff | designed; live path not yet observed |
-| An external ticket-system record created | not implemented or claimed |
-| Owner's separate Latch-connected internal agent | not proven end-to-end |
-
-Do not report the live path as proven from a successful image build alone, and
-do not report the offline path as if it exercised a conversation. The handoff
-and operator-agent rows remain open.
-
-### What a meaningful live check should show
-
-1. A wiki-backed customer question receives an answer with a receipt.
-2. A question without a reliable wiki answer is handed to the owner with a
-   dossier; the customer is told the team needs to investigate; no external
-   ticket is claimed unless a ticketing tool confirms it.
-3. OpenPlow does not use the operator's Latch-connected agent to inspect a
-   customer's machine or fill a wiki gap.
-4. Separately, the operator's internal agent can use only the Latch capabilities
-   the owner configured. This requires an enforced boundary from customer
-   sessions; the current repository does not prove that separation.
+The repository's local evidence covers the executable workflow and native
+configuration. No live Plow or Latch transaction was observed by those checks.
+Do not describe that external integration as proven until the acceptance check
+above is run in the intended deployment.

@@ -1,0 +1,8 @@
+{
+  "name": "@openplow/case-workflow",
+  "version": "0.1.0",
+  "description": "OpenClaw plugin: durable, role-bound OpenPlow support cases.",
+  "type": "module",
+  "license": "MIT",
+  "openclaw": { "extensions": ["./index.js"] }
+}

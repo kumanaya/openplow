@@ -1,0 +1,44 @@
+{
+  agents: {
+    entries: {
+      main: {
+        subagents: {
+          allowAgents: ["investigator", "curator"],
+          requireAgentId: true
+        },
+        tools: {
+          deny: [
+            "bundle-mcp", "exec", "process", "browser", "canvas", "nodes", "gateway",
+            "message", "conversations_send", "conversations_turn", "plow_start_thread",
+            "write", "edit", "apply_patch", "sessions_list", "sessions_history",
+            "sessions_search", "sessions_send"
+          ]
+        }
+      },
+      investigator: {
+        workspace: "/var/lib/plow/agents/investigator/workspace",
+        agentDir: "/var/lib/plow/agents/investigator/agent",
+        subagents: { allowAgents: [], requireAgentId: true },
+        tools: {
+          deny: [
+            "write", "edit", "apply_patch", "exec", "process", "browser", "canvas", "nodes", "gateway",
+            "message", "conversations_send", "conversations_turn", "plow_start_thread",
+            "sessions_list", "sessions_history", "sessions_search", "sessions_send", "sessions_spawn"
+          ]
+        }
+      },
+      curator: {
+        workspace: "/var/lib/plow/agents/curator/workspace",
+        agentDir: "/var/lib/plow/agents/curator/agent",
+        subagents: { allowAgents: [], requireAgentId: true },
+        tools: {
+          deny: [
+            "bundle-mcp", "read", "exec", "process", "browser", "canvas", "nodes", "gateway",
+            "write", "edit", "apply_patch", "message", "conversations_send", "conversations_turn",
+            "plow_start_thread", "sessions_list", "sessions_history", "sessions_search", "sessions_send", "sessions_spawn"
+          ]
+        }
+      }
+    }
+  }
+}
