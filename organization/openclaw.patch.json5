@@ -7,6 +7,7 @@
           requireAgentId: true
         },
         tools: {
+          alsoAllow: ["case_create", "case_resolve"],
           deny: [
             "bundle-mcp", "exec", "process", "browser", "canvas", "nodes", "gateway",
             "message", "conversations_send", "conversations_turn", "plow_start_thread",
@@ -20,6 +21,7 @@
         agentDir: "/var/lib/plow/agents/investigator/agent",
         subagents: { allowAgents: [], requireAgentId: true },
         tools: {
+          alsoAllow: ["case_claim", "case_verify", "case_block"],
           deny: [
             "write", "edit", "apply_patch", "exec", "process", "browser", "canvas", "nodes", "gateway",
             "message", "conversations_send", "conversations_turn", "plow_start_thread",
@@ -32,6 +34,7 @@
         agentDir: "/var/lib/plow/agents/curator/agent",
         subagents: { allowAgents: [], requireAgentId: true },
         tools: {
+          alsoAllow: ["case_prepare_candidate"],
           deny: [
             "bundle-mcp", "read", "exec", "process", "browser", "canvas", "nodes", "gateway",
             "write", "edit", "apply_patch", "message", "conversations_send", "conversations_turn",
