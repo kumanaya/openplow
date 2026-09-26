@@ -12,7 +12,7 @@
 
 `OpenClaw` × `Plow Wiki` × team handoff × `Latch`
 
-[80-second explainer](assets/openplow-explainer.mp4) — illustrative film, not
+[80-second explainer](https://github.com/user-attachments/assets/39dfcbef-e886-4b39-be8e-b0a895e76bfa) — illustrative film, not
 proof of a live handoff or an enforced Latch boundary.
 
 OpenPlow is a customer-facing support agent for product teams. A customer asks
