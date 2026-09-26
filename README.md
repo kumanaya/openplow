@@ -1,3 +1,11 @@
+<p align="center">
+  <img src="assets/banner.png" alt="OpenPlow concept illustration" width="100%">
+</p>
+
+> **Concept illustration:** this artwork predates the current security model.
+> Customer-facing OpenPlow answers from the wiki or prepares a handoff; Latch
+> is reserved for the operator's separate internal agent.
+
 # OpenPlow Support
 
 **Answers from the product wiki. Hands unanswered cases to the team.**
@@ -57,6 +65,14 @@ screenshots or evidence of a live deployment.
 
 <p align="center">
   <img src="assets/01.png" alt="Illustration of a customer asking OpenPlow for support" width="800">
+</p>
+
+<p align="center">
+  <img src="assets/02.png" alt="Illustration of OpenPlow investigating across authorized systems" width="800">
+</p>
+
+<p align="center">
+  <img src="assets/03.png" alt="Illustration of OpenPlow answering with a wiki receipt" width="800">
 </p>
 
 <p align="center">
