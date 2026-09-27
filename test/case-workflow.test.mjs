@@ -152,7 +152,7 @@ test('a Latch denial becomes BLOCKED and does not produce a resolution or candid
 });
 
 test('tool policy makes customer-side Latch and system access unavailable', () => {
-  for (const toolName of ['bundle-mcp', 'mcp__plow__plow_run_command', 'plow_read_file', 'exec', 'write']) {
+  for (const toolName of ['bundle-mcp', 'mcp__plow__plow_run_command', 'plow_read_file', 'exec', 'write', 'conversations_list']) {
     assert.match(boundaryDecision({ agentId: AgentId.FRONTLINE, toolName }), /frontline cannot access operator tools|frontline may read/);
   }
   assert.match(boundaryDecision({ agentId: AgentId.FRONTLINE, toolName: 'read', params: { path: '/var/lib/plow/cases/OP-0001.json' } }), /canonical knowledge only/);
