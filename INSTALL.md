@@ -93,8 +93,11 @@ the required Frontline binding in owner configuration and applies
 
 ## Operation
 
-- Dashboard: <http://localhost:3001>. Anyone with local dashboard access is an
-  administrator; do not publish it.
+- Nothing is published to the host. There is no `ports:` entry and no proxy in
+  front of the agent, so the Gateway's control surface is reachable only from
+  inside the container. The base authenticates the proxy as `operator.admin`,
+  which is why no port is opened: a published port is an administrator's
+  console. Operate through the Plow channel and `docker compose exec`.
 - Logs: `docker compose logs -f agent`.
 - Inspect native roster:
   `docker compose exec -T agent openclaw agents list`.

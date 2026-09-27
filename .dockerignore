@@ -21,7 +21,6 @@ plow-credentials.*
 
 # Not build inputs. Kept out of the context, not out of the repository.
 compose.yml
-dev/
 seed/
 scripts/
 test/

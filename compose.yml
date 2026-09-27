@@ -1,9 +1,9 @@
 # Pinned, and deliberately NOT derived from the directory name. Renaming the
 # checkout must not orphan the running deployment: an implicit project name
 # also names the `state` volume, so a rename would quietly hand the agent an
-# empty volume and leave the old containers still holding port 3001. Same
-# reasoning as naming the wiki volume explicitly — a deployment outlives what
-# it happens to be called on disk.
+# empty volume and leave the old containers still running. Same reasoning as
+# naming the wiki volume explicitly — a deployment outlives what it happens
+# to be called on disk.
 name: openplow-support
 
 services:
@@ -15,8 +15,16 @@ services:
     environment:
       AGENT_ID: openplow-support
     env_file: ./plow-credentials
-    ports:
-      - "127.0.0.1:3001:3001"
+    # No `ports:` and no reverse proxy in front of this service, deliberately.
+    # The agent is reached through the Plow channel and through
+    # `docker compose exec agent openclaw …`, never over a published socket.
+    # Anything that binds a host port here also becomes a browser-reachable
+    # control surface: the base runs the Gateway with `auth.mode:
+    # "trusted-proxy"` and `deviceAutoApprove.scopes: ["operator.admin"]`, so
+    # whoever reaches that port is an administrator of the agent. A local-only
+    # bind narrows the blast radius; publishing nothing removes it. If you need
+    # the Control UI, reach it from inside the container instead of opening a
+    # port on the host.
     # `state` is the runtime's own. `wiki` is organizational knowledge, and it
     # is NAMED, not a bind mount, because it has to outlive the container:
     # `docker compose down`, an image rebuild and a redeploy all keep it.
@@ -28,16 +36,12 @@ services:
       - config:/etc/plow/openclaw
       - wiki:/data
     stop_grace_period: 35s
-  # Local only. This plays Plow's agent-web proxy, which sits in front of your
-  # image in the cloud, so localhost:3001 behaves like the production dashboard.
-  # Anyone who can reach localhost:3001 on this machine is admin — it is
-  # loopback-published, and the Caddyfile refuses a foreign browser Origin.
-  dev-dashboard:
-    image: caddy:2@sha256:14a9c00d4e833ebc2b65d36515b37bde3b73f0b323a2663aaafc88953d8c4e3f
-    network_mode: service:agent
-    depends_on: [agent]
-    volumes:
-      - ./dev/Caddyfile:/etc/caddy/Caddyfile:ro
+  # There is no sidecar here. An earlier revision ran Caddy in front of the
+  # agent to imitate Plow's own agent-web proxy, published on 127.0.0.1:3001.
+  # It also re-created the admin problem it was meant to hide, and its
+  # `network_mode: service:agent` binding was silently orphaned by the
+  # installer's `docker compose restart agent`. Nothing in scripts/ talks to
+  # that port, so it is gone rather than repaired.
 volumes:
   state:
   # The base renders `$include` fragments here. Persist them with state so an
