@@ -15,16 +15,25 @@ const CASE_TOOLS = new Map([
   ['case_prepare_candidate', AgentId.CURATOR],
 ]);
 
+// The spawn lifecycle is one group, not one tool. OpenClaw's `messaging`
+// profile grants `sessions_spawn`, `sessions_yield` and `subagents` together,
+// so denying only the spawn still leaves a role able to list and cancel a
+// sibling's run via `subagents`, and to patch, reset, delete or reassign a
+// visible session via `sessions`. Both are denied for every role.
+const SPAWN_LIFECYCLE = ['sessions', 'sessions_spawn', 'sessions_yield', 'subagents'];
+
 const FRONTLINE_BLOCKED = new Set([
   'bundle-mcp', 'exec', 'process', 'browser', 'canvas', 'nodes', 'gateway',
   'message', 'conversations_list', 'conversations_send', 'conversations_turn', 'plow_start_thread',
   'write', 'edit', 'apply_patch', 'sessions_list', 'sessions_history',
   'sessions_search', 'sessions_send',
+  ...SPAWN_LIFECYCLE,
 ]);
 
 const INTERNAL_BLOCKED = new Set([
   'message', 'conversations_list', 'conversations_send', 'conversations_turn', 'plow_start_thread',
   'sessions_list', 'sessions_history', 'sessions_search', 'sessions_send',
+  ...SPAWN_LIFECYCLE,
 ]);
 
 const INVESTIGATOR_BLOCKED = new Set([
