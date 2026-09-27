@@ -1,4 +1,31 @@
 {
+  // Every role gets `profile: "minimal"` and grants its own tools back with
+  // `alsoAllow`. The base ships the whole deployment on `profile: "messaging"`,
+  // which is the right default for a general assistant and far too wide for a
+  // customer-facing support desk. Subtracting from a wide profile means every
+  // tool OpenClaw adds to `messaging` in a future release silently reaches all
+  // three roles, because a `deny` array is a closed list of names somebody has
+  // to remember to extend. Granting upward cannot rot that way.
+  //
+  // The `deny` lists are kept anyway. Deny wins over allow, so they stay the
+  // backstop for anything the base's own global `tools.alsoAllow` contributes
+  // (`read`, `write`, `edit`, `exec`, `plow_start_thread`).
+  //
+  // `sessions_spawn` is denied as part of a group, not alone. OpenClaw grants
+  // `sessions`, `sessions_spawn`, `sessions_yield` and `subagents` together as
+  // the spawn lifecycle; denying only the spawn would still leave the Curator
+  // able to cancel the Investigator's run, and any role able to reset, delete
+  // or reassign a visible session.
+  //
+  // `tools.agentToAgent` is deliberately absent. The base owns the `tools`
+  // object through an `$include`, and the pinned OpenClaw refuses to write
+  // there — `config patch` fails with "would flatten $include-owned config at
+  // tools", the same wall materialize-main-binding.mjs exists to work around
+  // for bindings. Cross-agent access is closed by the deny lists instead:
+  // `sessions`, `sessions_send`, `sessions_list`, `sessions_history`,
+  // `sessions_search` and `subagents` are denied for all three roles, so no
+  // role keeps a tool that can reach another role's session. If one of those
+  // denies is ever relaxed, cross-agent access reopens with it.
   agents: {
     entries: {
       main: {
@@ -7,12 +34,14 @@
           requireAgentId: true
         },
         tools: {
-          alsoAllow: ["case_create", "case_resolve"],
+          profile: "minimal",
+          alsoAllow: ["read", "sessions_spawn", "case_create", "case_resolve"],
           deny: [
             "bundle-mcp", "exec", "process", "browser", "canvas", "nodes", "gateway",
             "message", "conversations_list", "conversations_send", "conversations_turn", "plow_start_thread",
             "write", "edit", "apply_patch", "sessions_list", "sessions_history",
-            "sessions_search", "sessions_send"
+            "sessions_search", "sessions_send",
+            "sessions", "sessions_yield", "subagents"
           ]
         }
       },
@@ -21,11 +50,13 @@
         agentDir: "/var/lib/plow/agents/investigator/agent",
         subagents: { allowAgents: [], requireAgentId: true },
         tools: {
-          alsoAllow: ["case_claim", "case_verify", "case_block"],
+          profile: "minimal",
+          alsoAllow: ["read", "bundle-mcp", "case_claim", "case_verify", "case_block"],
           deny: [
             "write", "edit", "apply_patch", "exec", "process", "browser", "canvas", "nodes", "gateway",
             "message", "conversations_list", "conversations_send", "conversations_turn", "plow_start_thread",
-            "sessions_list", "sessions_history", "sessions_search", "sessions_send", "sessions_spawn"
+            "sessions_list", "sessions_history", "sessions_search", "sessions_send", "sessions_spawn",
+            "sessions", "sessions_yield", "subagents"
           ]
         }
       },
@@ -34,11 +65,15 @@
         agentDir: "/var/lib/plow/agents/curator/agent",
         subagents: { allowAgents: [], requireAgentId: true },
         tools: {
+          // One tool. Everything else the Curator needs is inside
+          // `case_prepare_candidate`.
+          profile: "minimal",
           alsoAllow: ["case_prepare_candidate"],
           deny: [
             "bundle-mcp", "read", "exec", "process", "browser", "canvas", "nodes", "gateway",
             "write", "edit", "apply_patch", "message", "conversations_list", "conversations_send", "conversations_turn",
-            "plow_start_thread", "sessions_list", "sessions_history", "sessions_search", "sessions_send", "sessions_spawn"
+            "plow_start_thread", "sessions_list", "sessions_history", "sessions_search", "sessions_send", "sessions_spawn",
+            "sessions", "sessions_yield", "subagents"
           ]
         }
       }

@@ -59,11 +59,33 @@ customer and conversation data.
 
 ## Tool and data boundaries
 
-| Role | Enforced deny surface | Explicitly retained |
-| --- | --- | --- |
-| Frontline | `bundle-mcp`, shell/process, browser/node/gateway, writes, direct messages, session discovery/history/send | Wiki reads; static `sessions_spawn`; case create/resolve |
-| Investigator | Local writes, shell/process, browser/node/gateway, direct messages, session discovery/send/spawn | Case claim/verify/block; MCP including Latch |
-| Curator | `bundle-mcp`, shell/process, browser/node/gateway, writes, messages, session discovery/send/spawn | Candidate staging tool only |
+| Role | Tool profile | Enforced deny surface | Explicitly retained |
+| --- | --- | --- | --- |
+| Frontline | `minimal` | `bundle-mcp`, shell/process, browser/node/gateway, writes, direct messages, all four session-orchestration tools | Wiki reads; static `sessions_spawn`; case create/resolve |
+| Investigator | `minimal` | Local writes, shell/process, browser/node/gateway, direct messages, all four session-orchestration tools | Wiki reads; case claim/verify/block; MCP including Latch |
+| Curator | `minimal` | `bundle-mcp`, reads, shell/process, browser/node/gateway, writes, messages, all four session-orchestration tools | Candidate staging tool only |
+
+Each role runs `tools.profile: "minimal"` and grants its own tools back with
+`alsoAllow`. The base deploys the whole Gateway on `profile: "messaging"`, which
+is right for a general assistant and far too wide here: subtracting from it
+means any tool a future OpenClaw release adds to `messaging` silently reaches
+all three roles, because a `deny` array is a closed list of names someone has
+to remember to extend. The `deny` lists are retained as the backstop — deny
+wins over allow — and `tools.agentToAgent` is disabled, since cross-agent
+session access is on by default and no role needs to address another's session
+outside the case workflow.
+
+`sessions_spawn` is denied as part of a group, not alone. OpenClaw grants
+`sessions`, `sessions_spawn`, `sessions_yield` and `subagents` together as the
+spawn lifecycle; denying only the spawn would still leave the Curator able to
+cancel the Investigator's live run, and any role able to reset, delete or
+reassign a visible session.
+
+`tools.agentToAgent` cannot be set from here. The base owns the `tools` object
+through an `$include` and the pinned OpenClaw refuses to write into it, the
+same wall `materialize-main-binding.mjs` works around for bindings. Cross-agent
+access is closed by the deny lists instead: every session-orchestration tool is
+denied for every role, so none keeps a route to another role's session.
 
 The plugin's `before_tool_call` hook repeats these role checks. It confines
 Frontline and Curator reads to `$WIKI_PATH`, blocks their MCP access including
@@ -73,6 +95,16 @@ conversation.
 The wiki remains a second boundary: canonical `/data/wiki` and its history are
 root-owned; `_raw/` is the controlled candidate inbox. Curator never gets a
 generic filesystem write tool. Human promotion is outside the Gateway.
+
+## Exposure
+
+Nothing is published to the host. `compose.yml` declares no `ports:` and runs no
+proxy in front of the agent, so the Gateway's control surface is reachable only
+from inside the container, through `docker compose exec`. The base authenticates
+its proxy as `operator.admin` with device auto-approval, which is why no port
+is opened at all rather than opened on loopback: a published port is an
+administrator's console. The wiki is the only thing brought in from outside,
+through the named `openplow-wiki` volume that `scripts/seed-vault.sh` populates.
 
 ## Limit
 

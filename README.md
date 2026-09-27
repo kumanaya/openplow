@@ -4,6 +4,8 @@
   </a>
 </p>
 
+<p align="center"><sub>Legacy illustration. It shows the former workflow where the support agent investigated customer systems through Latch. Frontline and Curator are now denied <code>bundle-mcp</code> entirely, and Latch is an operator-authorized path for the Investigator alone. The journey below is the current behavior.</sub></p>
+
 <h1 align="center">OpenPlow Support</h1>
 
 <p align="center"><strong>Wiki-first support with a durable, native OpenClaw investigation workflow.</strong></p>
@@ -17,8 +19,43 @@ native OpenClaw Gateway runs three explicit roles:
 | **Investigator** | Claims an unresolved case and verifies an evidence-backed result | May use the deployment's Latch MCP bridge for an operator-authorized workflow; cannot message customers, write the wiki, or delegate |
 | **Curator** | Converts a durable verified lesson into review material | No MCP/Latch or direct filesystem writes; can only stage `_raw/OP-*.md` through a role-bound tool |
 
+Each role runs on `tools.profile: "minimal"` and grants back only the tools its
+job needs, so a tool added to the base profile in a future OpenClaw release does
+not silently reach a customer-facing turn. The deployment publishes no port and
+runs no proxy: the agent is reached through the Plow channel and
+`docker compose exec`, never over an open socket.
+
 OpenPlow is independent software. It is not Plow, Latch, OpenClaw, or any
 product vendor's official support desk.
+
+## The customer journey
+
+[![01 — a customer asks a question](assets/01.png)](assets/01.png)
+
+**01 — A customer asks a question.** Each customer starts with an isolated
+OpenClaw session. The agent does not rely on cross-conversation memory.
+
+[![02 — it checks the wiki first](assets/02.png)](assets/02.png)
+
+**02 — It checks the wiki first.** It searches the company knowledge base in
+Plow Wiki. If no reliable page covers the case, OpenPlow prepares an internal
+handoff for the owner's team. It does not investigate the customer's device or
+systems.
+
+[![03 — it answers with a receipt](assets/03.png)](assets/03.png)
+
+**03 — It answers with a receipt.** Every factual answer includes a receipt: a
+wiki page or public URL the customer can open. No "trust me".
+
+[![04 — it learns for next time](assets/04.png)](assets/04.png)
+
+**04 — It learns for next time.** A useful lesson becomes a candidate note in
+the vault's `_raw/` inbox for human review. Approved content becomes canonical
+knowledge for future tickets. The agent never promotes a page itself.
+
+> Panel 04 shows the inbox as `~/Plow/wiki/_raw/`. The deployment path is
+> `$WIKI_PATH/_raw` — `/data/wiki/_raw`, a Docker volume. `~/Plow` is the
+> Latch auto-approve carve-out on the operator's Mac and is unrelated.
 
 ## How it works
 

@@ -12,14 +12,32 @@ ordinary customer sessions by peer, but OpenPlow does not rely on session
 visibility alone:
 
 - Frontline is the sole customer-facing role.
-- Its configured tool deny list removes MCP (`bundle-mcp`), shell/process,
-  browser/node/gateway, filesystem writes, cross-conversation send, and session
-  listing/history/search/send.
+- Every role runs `tools.profile: "minimal"` and grants its own tools back with
+  `alsoAllow`, rather than subtracting from the base's `messaging` profile. A
+  deny list is a closed set of names; a future OpenClaw release that widens
+  `messaging` would otherwise reach all three roles unreviewed. Deny wins over
+  allow, so the deny lists remain in place as the backstop.
+- The configured deny lists remove MCP (`bundle-mcp`), shell/process,
+  browser/node/gateway, filesystem writes, cross-conversation send, and the
+  whole session-orchestration surface: `sessions`, `sessions_spawn`,
+  `sessions_yield` and `subagents`. Denying only the spawn is not enough —
+  OpenClaw grants the four together, so the rest would let the Curator cancel
+  the Investigator's run and any role reset or reassign a visible session.
+- Cross-agent session access is closed by those denies rather than by
+  `tools.agentToAgent`, which cannot be set from the organization patch: the
+  base owns `tools` through an `$include` and the pinned OpenClaw refuses to
+  write there. Every session-orchestration tool is denied for every role, so
+  none keeps a route to another role's session. Relaxing one of those denies
+  reopens cross-agent access with it.
 - `case-workflow` repeats those checks in `before_tool_call`, using the
   authoritative Gateway `agentId`, session key, and requester. It also injects
   customer and conversation provenance instead of trusting model parameters.
 - Frontline's static child allowlist contains only `investigator` and `curator`.
   Internal roles cannot spawn further agents or message the customer.
+- Nothing is published to the host: `compose.yml` declares no `ports:` and runs
+  no proxy, so the Gateway's control surface is reachable only from inside the
+  container. The base authenticates its proxy as `operator.admin` with device
+  auto-approval, so an open port would be an administrator's console.
 
 This means customer text cannot grant Frontline an alternate tool route to
 Latch, another conversation, or canonical knowledge. It does not stop a
@@ -89,8 +107,9 @@ Gateway must use separate hardened Gateways and separate credentials.
    tenants or administrative domains.
 2. **Policy code is trusted.** A malicious image, extension, control-plane
    operator, or container escape can change configuration, tools, or case
-   records. Protect image supply chain, Docker access, and the loopback
-   dashboard as administrative access.
+   records. Protect image supply chain and Docker access as administrative
+   access; nothing is published to the host, so the control surface exists only
+   inside the container and inside `docker compose exec`.
 3. **No live external proof.** Offline tests prove configuration and local
    behavior, not a live Plow channel, Latch link, or correct human approval.
 4. **Candidates need review.** The candidate secret heuristic rejects obvious

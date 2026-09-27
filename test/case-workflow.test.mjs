@@ -164,6 +164,21 @@ test('tool policy makes customer-side Latch and system access unavailable', () =
   assert.equal(boundaryDecision({ agentId: AgentId.INVESTIGATOR, toolName: 'plow_run_command' }), null);
 });
 
+test('no role can reach the session or sub-agent control surface', () => {
+  // The Curator is the sharpest case: it may only stage a candidate, yet
+  // `subagents` would let it list and cancel the Investigator's live run, and
+  // `sessions` would let it reset, delete or hand another role ownership of a
+  // visible session. Denying `sessions_spawn` alone does not stop either.
+  for (const toolName of ['sessions', 'sessions_yield', 'subagents']) {
+    for (const agentId of [AgentId.FRONTLINE, AgentId.INVESTIGATOR, AgentId.CURATOR]) {
+      assert.ok(
+        boundaryDecision({ agentId, toolName }),
+        `${agentId} must not be able to call ${toolName}`,
+      );
+    }
+  }
+});
+
 test('case provenance comes from the Gateway session, not model-provided identifiers', () => {
   const patch = provenancePatch({
     agentId: AgentId.FRONTLINE,

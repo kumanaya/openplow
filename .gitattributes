@@ -9,7 +9,6 @@
 Dockerfile    text eol=lf
 *Dockerfile   text eol=lf
 compose.yml   text eol=lf
-Caddyfile     text eol=lf
 *.md          text eol=lf
 
 # Never rewritten, never line-ending converted.
