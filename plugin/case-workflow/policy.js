@@ -17,13 +17,13 @@ const CASE_TOOLS = new Map([
 
 const FRONTLINE_BLOCKED = new Set([
   'bundle-mcp', 'exec', 'process', 'browser', 'canvas', 'nodes', 'gateway',
-  'message', 'conversations_send', 'conversations_turn', 'plow_start_thread',
+  'message', 'conversations_list', 'conversations_send', 'conversations_turn', 'plow_start_thread',
   'write', 'edit', 'apply_patch', 'sessions_list', 'sessions_history',
   'sessions_search', 'sessions_send',
 ]);
 
 const INTERNAL_BLOCKED = new Set([
-  'message', 'conversations_send', 'conversations_turn', 'plow_start_thread',
+  'message', 'conversations_list', 'conversations_send', 'conversations_turn', 'plow_start_thread',
   'sessions_list', 'sessions_history', 'sessions_search', 'sessions_send',
 ]);
 

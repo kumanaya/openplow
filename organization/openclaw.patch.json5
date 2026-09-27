@@ -10,7 +10,7 @@
           alsoAllow: ["case_create", "case_resolve"],
           deny: [
             "bundle-mcp", "exec", "process", "browser", "canvas", "nodes", "gateway",
-            "message", "conversations_send", "conversations_turn", "plow_start_thread",
+            "message", "conversations_list", "conversations_send", "conversations_turn", "plow_start_thread",
             "write", "edit", "apply_patch", "sessions_list", "sessions_history",
             "sessions_search", "sessions_send"
           ]
@@ -24,7 +24,7 @@
           alsoAllow: ["case_claim", "case_verify", "case_block"],
           deny: [
             "write", "edit", "apply_patch", "exec", "process", "browser", "canvas", "nodes", "gateway",
-            "message", "conversations_send", "conversations_turn", "plow_start_thread",
+            "message", "conversations_list", "conversations_send", "conversations_turn", "plow_start_thread",
             "sessions_list", "sessions_history", "sessions_search", "sessions_send", "sessions_spawn"
           ]
         }
@@ -37,7 +37,7 @@
           alsoAllow: ["case_prepare_candidate"],
           deny: [
             "bundle-mcp", "read", "exec", "process", "browser", "canvas", "nodes", "gateway",
-            "write", "edit", "apply_patch", "message", "conversations_send", "conversations_turn",
+            "write", "edit", "apply_patch", "message", "conversations_list", "conversations_send", "conversations_turn",
             "plow_start_thread", "sessions_list", "sessions_history", "sessions_search", "sessions_send", "sessions_spawn"
           ]
         }
