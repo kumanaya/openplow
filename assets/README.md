@@ -1,20 +1,33 @@
 # assets
 
-This directory contains legacy illustrations and placeholders. They do not
-ship in the container.
+This directory mixes one legacy illustration with the current storyboard. They do
+not ship in the container.
 
 ```
 assets/
   banner.png               legacy illustration; former Latch workflow
-  01.png–04.png            legacy storyboard stills; not current behavior
+  01.png–04.png            current storyboard, used in the README
   openplow-explainer.mp4   current 80-second concept film
   demo/                    placeholder for verified live screenshots
 ```
 
-Do not use `banner.png` or `02.png` in product pages: they show OpenPlow
-investigating customer systems through Latch. The current support path is
-wiki-first and hands unanswered cases to the owner's team. Latch via MCP is an
-operator-side path for a separate internal agent.
+Do not use `banner.png` in product pages: it shows OpenPlow investigating
+customer systems through Latch, which is the workflow this project replaced. It
+is still linked from the README as a legacy illustration, under a caption that
+says so.
+
+`01.png`–`04.png` describe current behavior and are used in the README:
+
+- **01** an isolated session per customer, no cross-conversation memory
+- **02** wiki-first, internal handoff on a gap, and explicitly *not*
+  investigating the customer's device or systems
+- **03** a receipt on every factual answer
+- **04** a candidate staged in the vault's `_raw/` inbox for human review
+
+One inaccuracy remains in `04.png`: it labels the inbox `~/Plow/wiki/_raw/`. The
+deployment path is `$WIKI_PATH/_raw` — `/data/wiki/_raw`, a Docker volume.
+`~/Plow` is the Latch auto-approve carve-out on the operator's Mac and is
+unrelated. The panel needs regenerating; the README notes the correction.
 
 ## Explainer video
 
