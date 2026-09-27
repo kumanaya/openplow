@@ -22,12 +22,19 @@ says so.
 - **02** wiki-first, internal handoff on a gap, and explicitly *not*
   investigating the customer's device or systems
 - **03** a receipt on every factual answer
-- **04** a candidate staged in the vault's `_raw/` inbox for human review
+- **04** the Curator stages `OP-<caseId>.md` in `/data/wiki/_raw/` for human
+  review; approved content becomes canonical knowledge for the next customer
 
-One inaccuracy remains in `04.png`: it labels the inbox `~/Plow/wiki/_raw/`. The
-deployment path is `$WIKI_PATH/_raw` — `/data/wiki/_raw`, a Docker volume.
-`~/Plow` is the Latch auto-approve carve-out on the operator's Mac and is
-unrelated. The panel needs regenerating; the README notes the correction.
+Panel 04 was regenerated to match the implementation. It previously showed the
+inbox as `~/Plow/wiki/_raw/` — the Latch auto-approve carve-out on the
+operator's Mac, not the vault — named the candidates descriptively instead of
+by case ID, and claimed reusable knowledge for "future tickets", which the
+project does not support.
+
+The top navigation bar is inconsistent across the set: `04.png` reads
+`ASK / SEARCH / ANSWER / LEARN`, while `01`–`03` still read
+`KNOW / INVESTIGATE / LEARN / ESCALATE`. Only the navigation needs
+regenerating on those three; their content is accurate.
 
 ## Explainer video
 

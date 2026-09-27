@@ -49,13 +49,10 @@ wiki page or public URL the customer can open. No "trust me".
 
 [![04 — it learns for next time](assets/04.png)](assets/04.png)
 
-**04 — It learns for next time.** A useful lesson becomes a candidate note in
-the vault's `_raw/` inbox for human review. Approved content becomes canonical
-knowledge for future tickets. The agent never promotes a page itself.
-
-> Panel 04 shows the inbox as `~/Plow/wiki/_raw/`. The deployment path is
-> `$WIKI_PATH/_raw` — `/data/wiki/_raw`, a Docker volume. `~/Plow` is the
-> Latch auto-approve carve-out on the operator's Mac and is unrelated.
+**04 — It learns for next time.** The Curator writes a candidate note —
+`OP-0001.md`, named after the case, never a descriptive filename — into
+`/data/wiki/_raw/` for human review. Approved content becomes canonical
+knowledge for the next customer. The agent never promotes a page itself.
 
 ## How it works
 
