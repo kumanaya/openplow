@@ -8,6 +8,8 @@
 
 <p align="center"><strong>Wiki-first support with a durable, native OpenClaw investigation workflow.</strong></p>
 
+<p align="center"><a href="https://openplow.vercel.app/">openplow.vercel.app</a></p>
+
 OpenPlow is a customer-facing support organization for a product team. One
 native OpenClaw Gateway runs three explicit roles:
 
@@ -127,6 +129,7 @@ the correctness of an operator's authorization decision. See
 | Offline and live verification | [docs/verification.md](docs/verification.md) |
 | Security model and limitations | [SECURITY.md](SECURITY.md) |
 | Investigator Latch Gatekeeper policy | [LATCH-RULES.md](LATCH-RULES.md) |
+| Official site | <https://openplow.vercel.app/> |
 
 ## License
 
