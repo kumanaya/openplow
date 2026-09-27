@@ -13,8 +13,8 @@ assets/
 
 Do not use `banner.png` in product pages: it shows OpenPlow investigating
 customer systems through Latch, which is the workflow this project replaced. It
-is still linked from the README as a legacy illustration, under a caption that
-says so.
+is still the README's header illustration, so treat it as a legacy asset and
+replace it when a current one exists.
 
 `01.png`–`04.png` describe current behavior and are used in the README:
 

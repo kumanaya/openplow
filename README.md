@@ -4,8 +4,6 @@
   </a>
 </p>
 
-<p align="center"><sub>Legacy illustration. It shows the former workflow where the support agent investigated customer systems through Latch. Frontline and Curator are now denied <code>bundle-mcp</code> entirely, and Latch is an operator-authorized path for the Investigator alone. The journey below is the current behavior.</sub></p>
-
 <h1 align="center">OpenPlow Support</h1>
 
 <p align="center"><strong>Wiki-first support with a durable, native OpenClaw investigation workflow.</strong></p>
