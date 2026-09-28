@@ -7,16 +7,13 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { infraLeak, messageText, revisionInstruction } from '../plugin/infra-guard/rules.js';
+import { infraLeak, judgementCandidates, judgementPrompt, judgementSaysLeak, messageText, revisionInstruction } from '../plugin/infra-guard/rules.js';
 
 const catches = [
   ['the real leak, verbatim',
     "I'm running on a container (host 7976e208480b) under Linux on a WSL2 environment (x64), with Node v24.19.0. The current model is plow/z-ai/glm-5.2."],
   ['container id alone', 'The container is 7976e208480b.'],
   ['host OS', 'This runs on WSL2.'],
-  ['runtime version', 'I am on Node v24.19.0.'],
-  ['architecture', "I'm on x64."],
-  ['container runtime', 'I run under Docker.'],
   ['deployment path', 'The vault is at /var/lib/plow/workspace.'],
   ['a path under /data that is not the vault', 'Config lives in /data/openclaw/notes.'],
   ['the wiki CLI install, not the vault', 'The tool is at /opt/plow/wiki-tool/bin.'],
@@ -30,6 +27,10 @@ const catches = [
   ['model id', 'I am z-ai/glm-5.2.'],
   ['model id, provider path', 'Backed by openai/gpt-5.'],
   ['local port', 'Open http://localhost:3001 to see me.'],
+  // 'runtime version', 'architecture' and 'container runtime' used to live here.
+  // They are judgement cases now: a version number can be a product
+  // requirement and a container can be a fact being cited, so the words alone
+  // cannot decide. They are asserted through `judgementCandidates` below.
 ];
 
 const passes = [
@@ -56,40 +57,93 @@ const passes = [
   ['empty string', ''],
 ];
 
-// The sentences that got through. The guard's first-person test was English
-// only, and the customer was writing in Portuguese, so a rule gated on "i" and
-// "my" could not see any of this.
-const catchesPortuguese = [
-  ['self, container', 'Eu rodo dentro de um container.'],
-  ['self, kernel', 'Meu acesso foi recusado pelo kernel.'],
-  ['own EACCES', 'Recebi um EACCES no meu filesystem.'],
-  ['my filesystem', 'Meu filesystem é somente leitura para as páginas canônicas.'],
-  ['named agent, node', 'O agente roda como node.'],
-  ['we, root-owned', 'Nós rodamos com as páginas root-owned.'],
-];
+// The routing and the reading of the verdict. Both are pure on purpose: a
+// security rule whose only test is "we tried it once live" is not a test. The
+// model is the judge, not the policy.
+test('the always-rules are the verdict; narration only raises a question', () => {
+  // Deterministic, language-independent, final. A path or an id means the same
+  // thing in every language, so these never reach the model.
+  assert.equal(infraLeak('Consulte /var/lib/plow/workspace.').id, 'deployment-path');
+  assert.equal(infraLeak('Estou em WSL2.').id, 'wsl');
+  assert.equal(infraLeak('O modelo é z-ai/glm-5.2.').id, 'model-id');
+  assert.equal(infraLeak('O id é 7976e208480b.').id, 'host-id');
+  // And they short-circuit the judge: a text with a certain hit is never worth
+  // a second opinion.
+  assert.deepEqual(judgementCandidates('Estou em Node v24 e o id é 7976e208480b.'), []);
 
-test('catches runtime narration in the language the customer wrote in', () => {
-  for (const [label, line] of catchesPortuguese) {
-    const hit = infraLeak(line);
-    assert.ok(hit, `should have caught: ${label}`);
-    assert.ok(hit.phrase.length > 0, `needs the exact phrase: ${label}`);
-  }
-});
-
-test('still lets a support answer cite a page that says the same words', () => {
-  // "container" is in ten pages of this wiki and "root-owned" in four. A
-  // citation that names the fact is the product working; catching it would be
-  // the same mistake as blocking the vault path, which this repo already fixed
-  // once.
+  // Narration vocabulary with no certain hit becomes a question. Third person
+  // is included on purpose: the first-person gate is what let this through.
   for (const line of [
-    'A página de dados do plow-wiki explica onde o container guarda o volume.',
-    'As páginas canônicas são root-owned — está no runbook de permissões.',
-    'O runbook a-maintenance-command-fails-as-the-agent cita EACCES e o motivo.',
-    'A documentação do plow-wiki menciona Node como requisito de build.',
+    'Eu rodo dentro de um container.',
+    'O agente roda como node.',
+    'As páginas canônicas são root-owned e o kernel recusou.',
+    'Recebi um EACCES no meu filesystem.',
+    'I run inside a container.',
+    'It is on Node v24.',
   ]) {
-    assert.equal(infraLeak(line), null, line);
+    const c = judgementCandidates(line);
+    assert.equal(c.length, 1, line);
+    assert.ok(c[0].hit.phrase.length > 0, line);
+    assert.ok(c[0].hit.why.length > 0, line);
+  }
+
+  // Ordinary support traffic raises nothing at all.
+  for (const line of [
+    'Latch é o app do Mac que dá ao agente acesso aprovado.',
+    'A resposta está em /data/wiki/concepts/latch.md.',
+    'O preço do Plow não está na wiki.',
+    '',
+  ]) {
+    assert.deepEqual(judgementCandidates(line), [], line);
   }
 });
+
+test('the judge is asked one narrow question, and biased toward documentation', () => {
+  const [{ text, hit }] = judgementCandidates('O agente roda como node.');
+  const prompt = judgementPrompt(text, hit);
+  assert.match(prompt, /describing the machine it runs on/);
+  assert.match(prompt, /citing\/referencing documentation/);
+  assert.match(prompt, /exactly one word/);
+  assert.match(prompt, /not certain, answer DOC/);
+  // It must not lead: the model is told which answer is the safe one.
+  assert.ok(prompt.indexOf('answer DOC') < prompt.indexOf('Reply with exactly'));
+});
+
+test('only an explicit LEAK blocks, and a failed judge blocks nothing', () => {
+  assert.equal(judgementSaysLeak('LEAK'), true);
+  assert.equal(judgementSaysLeak('  leak  '), true);
+  assert.equal(judgementSaysLeak('LEAK — the agent describes its own container'), true);
+
+  for (const answer of ['DOC', 'doc', '', null, undefined, 42, {}, 'I am not sure', 'LEAKAGE']) {
+    assert.equal(judgementSaysLeak(answer), false, String(answer));
+  }
+});
+
+test('narration no longer needs a first-person word to be caught', () => {
+  // The regression this replaced: SELF was English-only and this deployment is
+  // Portuguese, and both of these used to pass silently.
+  for (const line of [
+    'As páginas canônicas são root-owned e o container roda como node — é o kernel recusando.',
+    'O agente roda como node.',
+  ]) {
+    assert.ok(judgementCandidates(line).length > 0, line);
+  }
+});
+
+test('a correct citation raises the question and is answered DOC', () => {
+  // "container" is in ten pages of this wiki and "root-owned" in four. A
+  // citation that names the fact is the product working; rewriting it would be
+  // the same mistake as blocking the vault path, already fixed once.
+  for (const line of [
+    'A página do plow-wiki explica onde o container guarda o volume.',
+    'As páginas canônicas são root-owned — está no runbook de permissões.',
+  ]) {
+    const c = judgementCandidates(line);
+    assert.equal(c.length, 1, line);
+    assert.equal(judgementSaysLeak('DOC'), false, line);
+  }
+});
+
 
 test('catches deployment identity', () => {
   for (const [label, line] of catches) {
@@ -122,8 +176,8 @@ test('reads text out of the shapes a message arrives in', () => {
 });
 
 test('the instruction names the phrase and how to rewrite it', () => {
-  const hit = infraLeak('I am on Node v24.19.0.');
+  const hit = infraLeak('I am on WSL2.');
   const instruction = revisionInstruction(hit);
-  assert.match(instruction, /Node v24\.19\.0/, 'must quote what was wrong');
+  assert.match(instruction, /WSL2/, 'must quote what was wrong');
   assert.match(instruction, /OpenPlow/, 'must say what it is instead');
 });

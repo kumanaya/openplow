@@ -64,57 +64,31 @@ const ALWAYS = [
 ];
 
 /**
- * Ambiguous on their own — these words belong in a support answer about what
- * Plow supports. They only count when the agent is describing *itself*, which
- * is what a first-person reference in the same sentence means.
+ * Vocabulary that raises the question. NOT a verdict.
  *
- * Known limit, deliberately not papered over: a purely third-person phrasing
- * ("it is on Node v24") slips past these three. The always-rules still catch a
- * host id, an OS, a path or a model id, and the persona says not to volunteer
- * any of it in the first place. The guard is the net, not the plan.
+ * These words are in this product's own pages — "container" in ten of them,
+ * "root-owned" in four, "EACCES" in two — so a rule that fired on them would
+ * rewrite correct citations. That is the same mistake as blocking the vault
+ * path, and it was made twice.
+ *
+ * So this list only decides *whether to ask*. Whether the agent is describing
+ * its own machine or quoting a page that says the same thing is a question about
+ * meaning, not about grammar, and a model answers it in any language and in the
+ * third person. See `judgementPrompt`.
  */
-const CONTEXTUAL = [
-  {
-    id: 'runtime-version',
-    pattern: /\b(?:node(?:\.js)?\s*v?\d+\.\d+(?:\.\d+)?|py(?:thon)?\s+3\.\d+(?:\.\d+)?)/i,
-    why: 'a runtime version number',
-  },
-  {
-    id: 'arch',
-    pattern: /\b(?:x64|x86_64|amd64|aarch64|arm64)\b/i,
-    why: 'a description of the machine it runs on, not of the product',
-  },
-  {
-    id: 'container-runtime',
-    pattern: /\bdocker\b|\bcontainers?\s+(?:id|image|run)\b/i,
-    why: 'a description of how it is deployed rather than what it supports',
-  },
-  {
-    // The vocabulary of narration, not of identification. These words are in
-    // this product's own pages — "container" in ten of them, "root-owned" in
-    // four, "EACCES" in two — so an always-rule would fire on a correct
-    // citation, which is the same mistake as blocking the vault path.
-    //
-    // What is not in a product doc is the agent narrating its own execution:
-    // "rodo dentro de um container", "o meu EACCES", "meu filesystem". Gated
-    // on first person, like the rest of this class.
-    id: 'runtime-narration',
-    pattern: /\b(?:containers?|kernel|root-?owned|EACCES|EPERM|filesystem|file system|file-?system)\b|\bnode(?:\.js)?\b(?!\s*[-_a-z])/i,
-    why: 'a description of how this agent executes, not of what it supports',
-  },
+const NARRATION = [
+  // A version number looks like an identifier and belongs in the deterministic
+  // rules above. It does not: this product's own pages say "plow-wiki needs
+  // Python 3.11 or newer", and a rule that flags that rewrites a correct
+  // answer. The test suite caught it before a customer did. It asks the judge,
+  // which can tell a product requirement from a disclosure.
+  { id: 'runtime-version', pattern: /\b(?:node(?:\.js)?|python|py)\b/i, why: 'a runtime, either one this agent executes on or one a product requires' },
+  { id: 'arch', pattern: /\b(?:x64|x86_64|amd64|aarch64|arm64)\b/i, why: 'a machine architecture' },
+  { id: 'container-runtime', pattern: /\b(?:docker|containers?|kernel|sidecars?)\b/i, why: 'how this agent is deployed' },
+  { id: 'runtime-narration', pattern: /\b(?:root-?owned|EACCES|EPERM|filesystem|file system|file-?system|process supervisor|s6)\b/i, why: 'how this agent executes' },
 ];
 
-/**
- * First person, or a name for the thing speaking.
- *
- * It was English-only, and the sentences it needed to catch are written in
- * whatever language the customer wrote in. This deployment is Portuguese, and a
- * rule gated on `i` / `my` cannot see "eu rodo dentro de um container" — it
- * passed, and a customer was told what the container was running.
- */
-const SELF = /\b(?:i|i'm|i've|i'd|my|mine|me|we|we're|our|ours|us|this agent|the agent|eu|meu|minha|meus|minhas|comigo|conosco|nós|nosso|nossa|nossos|nossas|este agente|esta agente|o agente|a agente)\b/iu;
-
-/** Split on sentence enders. Cheap, and the right granularity: a leak is a sentence. */
+/** Split on sentence enders. A leak is a sentence, and so is a citation. */
 function sentences(text) {
   return text.split(/(?<=[.!?])\s+|\n+/).filter(Boolean);
 }
@@ -128,22 +102,81 @@ function firstHit(text, rules) {
 }
 
 /**
- * The single piece of knowledge this module has: given text, is any part of it
- * a disclosure of how this agent is deployed?
+ * The deterministic half, and the only half that runs on every door.
  *
- * @returns {{id: string, phrase: string, why: string} | null} first hit, or null.
+ * These match identifiers and paths, which mean the same thing in every
+ * language: a container id, a host hash, an OS name, a deployment path, a
+ * model id, a local port, a command for the reader to run. A hit is final and
+ * nothing can overturn it, which is what makes it safe to keep synchronous.
+ *
+ * @returns {{id: string, phrase: string, why: string} | null}
  */
 export function infraLeak(text) {
   if (typeof text !== 'string' || text.length === 0) return null;
-  const direct = firstHit(text, ALWAYS);
-  if (direct) return direct;
-  for (const sentence of sentences(text)) {
-    if (!SELF.test(sentence)) continue;
-    const hit = firstHit(sentence, CONTEXTUAL);
-    if (hit) return hit;
-  }
-  return null;
+  return firstHit(text, ALWAYS);
 }
+
+/**
+ * The sentences worth a second opinion: narration vocabulary present, no
+ * deterministic hit in the text.
+ *
+ * Pure, so the routing is testable without a model — which matters, because a
+ * security rule whose only test is "we tried it once live" is not a test.
+ *
+ * @returns {Array<{text: string, hit: {id: string, phrase: string, why: string}}>}
+ */
+export function judgementCandidates(text) {
+  if (typeof text !== 'string' || text.length === 0) return [];
+  if (infraLeak(text)) return [];
+  return sentences(text)
+    .map((sentence) => ({ text: sentence, hit: firstHit(sentence, NARRATION) }))
+    .filter((c) => c.hit);
+}
+
+/**
+ * The one question the model is asked.
+ *
+ * Deliberately narrow, and deliberately biased: the cost of a false positive is
+ * a correct answer rewritten, which is the failure this repo already shipped
+ * twice. So the model is told that quoting documentation is not a disclosure,
+ * and that anything short of a clear self-description is documentation.
+ */
+export function judgementPrompt(sentence, hit) {
+  return [
+    `A support agent is about to send this sentence to a customer:`,
+    ``,
+    sentence,
+    ``,
+    `It contains "${hit.phrase}" (${hit.why}).`,
+    ``,
+    `Answer ONE question: is the agent describing the machine it runs on,`,
+    `or is it citing/referencing documentation, a product fact, or the`,
+    `customer's own setup?`,
+    ``,
+    `LEAK — the agent is describing its own host, container, runtime,`,
+    `permissions or paths, for example "I run in a container", "the kernel`,
+    `refused my write", "my filesystem is read-only here".`,
+    `DOC — anything else. Quoting a page, describing the product, or explaining`,
+    `a concept that happens to use one of these words is DOC, even in the third`,
+    `person and even when the machine being described is the agent's.`,
+    ``,
+    `When you are not certain, answer DOC.`,
+    ``,
+    `Reply with exactly one word: LEAK or DOC.`,
+  ].join('\n');
+}
+
+/**
+ * The model's answer, read conservatively: only an explicit LEAK blocks, and a
+ * judge that failed, timed out or answered nonsense blocks nothing.
+ *
+ * @returns {boolean} true when the sentence is a disclosure
+ */
+export function judgementSaysLeak(answer) {
+  if (typeof answer !== 'string') return false;
+  return /^\s*LEAK\b/i.test(answer.trim());
+}
+
 
 /** The text an outbound message actually carries, whatever shape it arrived in. */
 export function messageText(content) {
