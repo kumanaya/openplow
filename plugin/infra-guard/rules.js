@@ -27,9 +27,17 @@ const ALWAYS = [
   },
   {
     id: 'deployment-path',
-    // WIKI_PATH is /data/wiki; the others are where the base keeps its home and
-    // the prompt. All four are inside the deployment, none in a product doc.
-    pattern: /\/(?:var\/lib|opt|data)\/(?:plow|hermes|openclaw|wiki)\b/i,
+    // `/data/wiki` is the VAULT, and citing a page under it is the receipt:
+    // `skills/knowledge-base/SKILL.md` tells the agent to read from
+    // `$WIKI_PATH`, and the persona tells it to cite the page it actually read.
+    // A guard that blocks the receipt blocks the product — in one session of
+    // real use this rule fired three times on `/data/wiki` alone, rewriting
+    // answers that were correct, and the deployment's own knowledge base is
+    // public by design.
+    //
+    // Everything else under /data stays blocked, and so does the base's own
+    // homes: /var/lib/plow, /opt/plow, /opt/hermes, /var/lib/openclaw.
+    pattern: /\/(?:var\/lib|opt)\/(?:plow|hermes|openclaw|wiki)\b|\/data\/(?!wiki\b)[a-z]/i,
     why: 'a path inside the deployment',
   },
   {

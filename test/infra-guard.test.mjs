@@ -18,7 +18,13 @@ const catches = [
   ['architecture', "I'm on x64."],
   ['container runtime', 'I run under Docker.'],
   ['deployment path', 'The vault is at /var/lib/plow/workspace.'],
-  ['wiki mount path', 'Pages live in /data/wiki/concepts.'],
+  ['a path under /data that is not the vault', 'Config lives in /data/openclaw/notes.'],
+  ['the wiki CLI install, not the vault', 'The tool is at /opt/plow/wiki-tool/bin.'],
+  // The vault path in the same sentence does not launder the real one: this
+  // line cites a page correctly AND leaks the base's home, so it must be
+  // caught, and the phrase reported must be the leak.
+  ['a receipt and a leak in one answer',
+    'A wiki fica em /data/wiki/index.md — o home da base é /var/lib/plow.'],
   ['operator command handed to the reader', 'Você roda: docker compose run --rm --user root agent'],
   ['root escalation', 'Run it with --user root.'],
   ['model id', 'I am z-ai/glm-5.2.'],
@@ -39,6 +45,13 @@ const passes = [
     'plow-wiki needs Python 3.11 or newer; Node is not involved.'],
   ['Docker as a supported workflow, mentioned not issued',
     'If you want to run it yourself, the README has a docker compose section.'],
+  // The receipt. The knowledge-base skill tells the agent to read from
+  // `$WIKI_PATH` and the persona tells it to cite the page it read, so a
+  // support answer carrying a vault path is the product working, not a leak.
+  // This rule used to block exactly this line, and rewrote correct answers.
+  ['the receipt: a page under the vault', 'A resposta está em /data/wiki/concepts/latch.md.'],
+  ['the vault root itself', 'Consulte /data/wiki/index.md para a lista de páginas.'],
+  ['the candidate inbox', 'Deixei o rascunho em /data/wiki/_raw/OP-0001.md.'],
   ['an escalation', 'I could not check the machine, so I have handed this to your owner.'],
   ['empty string', ''],
 ];
