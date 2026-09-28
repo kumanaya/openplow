@@ -1,4 +1,4 @@
-import { resolve, sep } from 'node:path';
+import { isAbsolute, resolve, sep } from 'node:path';
 
 export const AgentId = Object.freeze({
   FRONTLINE: 'main',
@@ -50,7 +50,20 @@ const CURATOR_BLOCKED = new Set([
 function inside(path, root) {
   if (typeof path !== 'string' || path.trim() === '') return false;
   const normalizedRoot = resolve(root);
-  const normalizedPath = resolve(path);
+  // A relative path is a path the caller means relative to the VAULT, not to
+  // whatever the process happens to have as its working directory. Resolving
+  // it against the CWD is what made `concepts/agent-index.md` resolve into the
+  // agent's own workspace and get blocked — and the model, told only that it
+  // "may read canonical knowledge", read that as "the wiki does not have it"
+  // and answered from public documentation instead. A refusal that teaches the
+  // wrong lesson is worse than the read it prevented.
+  //
+  // Traversal is unchanged: `../../etc/passwd` joins out of the root and fails
+  // the same containment test below.
+  const requested = path.trim();
+  const normalizedPath = isAbsolute(requested)
+    ? resolve(requested)
+    : resolve(normalizedRoot, requested);
   return normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}${sep}`);
 }
 
@@ -77,13 +90,17 @@ export function boundaryDecision({ agentId, toolName, params = {}, wikiPath = '/
       return 'frontline may spawn only the configured investigator or curator';
     }
     if (toolName === 'read' && !inside(params.path, wikiPath)) {
-      return 'frontline may read canonical knowledge only';
+      // The accepted path belongs in the reason. A block the model cannot act
+      // on gets turned into a wrong conclusion, and this one was: "you may
+      // read canonical knowledge only" reads as "the wiki has nothing", which
+      // is not the same answer as "ask again with a path under the root".
+      return `frontline may read canonical knowledge only, under ${wikiPath} — pass a path relative to that root, or absolute`;
     }
   }
 
   if (agentId === AgentId.INVESTIGATOR) {
     if (INVESTIGATOR_BLOCKED.has(toolName)) return 'investigator uses approved Latch capabilities, not local writes, shells, customer messaging or customer sessions';
-    if (toolName === 'read' && !inside(params.path, wikiPath)) return 'investigator may read canonical knowledge only';
+    if (toolName === 'read' && !inside(params.path, wikiPath)) return `investigator may read canonical knowledge only, under ${wikiPath} — pass a path relative to that root, or absolute`;
     if (toolName === 'sessions_spawn') return 'investigator does not create agents or delegate cases';
   }
 

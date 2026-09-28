@@ -164,6 +164,49 @@ test('tool policy makes customer-side Latch and system access unavailable', () =
   assert.equal(boundaryDecision({ agentId: AgentId.INVESTIGATOR, toolName: 'plow_run_command' }), null);
 });
 
+test('a relative wiki path is read against the vault, not against the working directory', () => {
+  // The shape a model actually produces when it is told "read
+  // concepts/agent-index.md". Resolved against the process CWD — the agent's
+  // own workspace — this lands outside the vault and gets blocked, and the
+  // model then reports the wiki as empty. It is a refusal that teaches the
+  // wrong lesson, so the relative form has to mean what the caller meant.
+  for (const path of [
+    'concepts/agent-index.md',
+    './concepts/agent-index.md',
+    'index.md',
+    'entities/orgs/ai-worth-using.md',
+    'skills/how-to-publish-your-agent-on-the-agent-index.md',
+  ]) {
+    assert.equal(boundaryDecision({ agentId: AgentId.FRONTLINE, toolName: 'read', params: { path } }), null, path);
+    assert.equal(boundaryDecision({ agentId: AgentId.INVESTIGATOR, toolName: 'read', params: { path } }), null, path);
+  }
+
+  // The root itself, and a page in the candidate inbox under it, are inside.
+  assert.equal(boundaryDecision({ agentId: AgentId.FRONTLINE, toolName: 'read', params: { path: '.' } }), null);
+  assert.equal(boundaryDecision({ agentId: AgentId.FRONTLINE, toolName: 'read', params: { path: '_raw/OP-0001.md' } }), null);
+
+  // Making a relative path work must not make an escaping one work. These join
+  // out of the root and are refused by the same containment test.
+  for (const path of [
+    '../../etc/passwd',
+    'concepts/../../var/lib/plow/cases/OP-0001.json',
+    '/var/lib/plow/cases/OP-0001.json',
+    '/data/wikievil/index.md',
+  ]) {
+    assert.match(
+      boundaryDecision({ agentId: AgentId.FRONTLINE, toolName: 'read', params: { path } }),
+      /canonical knowledge only, under \/data\/wiki/,
+      path,
+    );
+  }
+
+  // The reason has to be actionable, or the model reports "no knowledge"
+  // instead of retrying. This is the string it gets back.
+  const reason = boundaryDecision({ agentId: AgentId.FRONTLINE, toolName: 'read', params: { path: '/etc/passwd' } });
+  assert.match(reason, /\/data\/wiki/);
+  assert.match(reason, /relative/);
+});
+
 test('no role can reach the session or sub-agent control surface', () => {
   // The Curator is the sharpest case: it may only stage a candidate, yet
   // `subagents` would let it list and cancel the Investigator's live run, and
