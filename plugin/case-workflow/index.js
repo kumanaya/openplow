@@ -262,8 +262,12 @@ function note(sessionKey, ctx, toolName) {
 
 function enforceCaseWork(ctx) {
   const sessionKey = ctx?.sessionKey;
-  if (!sessionKey) return;
+  if (!sessionKey) {
+    console.log(`[case-work] finalize sem sessionKey, ctx=${JSON.stringify(Object.keys(ctx || {}).sort())}`);
+    return;
+  }
   const agentId = agentIdFromSessionKey(sessionKey);
+  console.log(`[case-work] finalize sessionKey=${sessionKey} agent=${agentId}`);
   if (agentId !== AgentId.INVESTIGATOR && agentId !== AgentId.CURATOR) return;
 
   const turn = turns.get(sessionKey);
