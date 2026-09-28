@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { CaseState, CaseStore } from '../plugin/case-workflow/case-store.js';
-import { AgentId, boundaryDecision, provenancePatch } from '../plugin/case-workflow/policy.js';
+import { AgentId, boundaryDecision, provenancePatch, resolveReadPath } from '../plugin/case-workflow/policy.js';
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'openplow-cases-'));
@@ -162,6 +162,76 @@ test('tool policy makes customer-side Latch and system access unavailable', () =
   assert.match(boundaryDecision({ agentId: AgentId.INVESTIGATOR, toolName: 'read', params: { path: '/var/lib/plow/cases/OP-0001.json' } }), /canonical knowledge only/);
   assert.equal(boundaryDecision({ agentId: AgentId.INVESTIGATOR, toolName: 'read', params: { path: '/data/wiki/concepts/auth.md' } }), null);
   assert.equal(boundaryDecision({ agentId: AgentId.INVESTIGATOR, toolName: 'plow_run_command' }), null);
+});
+
+test('a relative wiki path is read against the vault, not against the working directory', () => {
+  // The shape a model actually produces when it is told "read
+  // concepts/agent-index.md". Resolved against the process CWD — the agent's
+  // own workspace — this lands outside the vault and gets blocked, and the
+  // model then reports the wiki as empty. It is a refusal that teaches the
+  // wrong lesson, so the relative form has to mean what the caller meant.
+  for (const path of [
+    'concepts/agent-index.md',
+    './concepts/agent-index.md',
+    'index.md',
+    'entities/orgs/ai-worth-using.md',
+    'skills/how-to-publish-your-agent-on-the-agent-index.md',
+  ]) {
+    assert.equal(boundaryDecision({ agentId: AgentId.FRONTLINE, toolName: 'read', params: { path } }), null, path);
+    assert.equal(boundaryDecision({ agentId: AgentId.INVESTIGATOR, toolName: 'read', params: { path } }), null, path);
+  }
+
+  // The root itself, and a page in the candidate inbox under it, are inside.
+  assert.equal(boundaryDecision({ agentId: AgentId.FRONTLINE, toolName: 'read', params: { path: '.' } }), null);
+  assert.equal(boundaryDecision({ agentId: AgentId.FRONTLINE, toolName: 'read', params: { path: '_raw/OP-0001.md' } }), null);
+
+  // Making a relative path work must not make an escaping one work. These join
+  // out of the root and are refused by the same containment test.
+  for (const path of [
+    '../../etc/passwd',
+    'concepts/../../var/lib/plow/cases/OP-0001.json',
+    '/var/lib/plow/cases/OP-0001.json',
+    '/data/wikievil/index.md',
+  ]) {
+    assert.match(
+      boundaryDecision({ agentId: AgentId.FRONTLINE, toolName: 'read', params: { path } }),
+      /canonical knowledge only, under \/data\/wiki/,
+      path,
+    );
+  }
+
+  // The reason has to be actionable, or the model reports "no knowledge"
+  // instead of retrying. This is the string it gets back.
+  const reason = boundaryDecision({ agentId: AgentId.FRONTLINE, toolName: 'read', params: { path: '/etc/passwd' } });
+  assert.match(reason, /\/data\/wiki/);
+  assert.match(reason, /relative/);
+});
+
+test('a relative read is rewritten to the absolute path the tool can open', () => {
+  // The read tool resolves a relative path against the agent's WORKSPACE, not
+  // the vault, so `concepts/agent-index.md` opens
+  // `/var/lib/plow/workspace/concepts/agent-index.md` and fails with ENOENT.
+  // Letting that through teaches nothing — the model retries the same shape
+  // and then reports the wiki as empty.
+  assert.equal(resolveReadPath({ path: 'concepts/agent-index.md' }), '/data/wiki/concepts/agent-index.md');
+  assert.equal(resolveReadPath({ path: './index.md' }), '/data/wiki/index.md');
+  assert.equal(resolveReadPath({ path: 'index.md' }), '/data/wiki/index.md');
+  assert.equal(resolveReadPath({ path: '_raw/OP-0001.md' }), '/data/wiki/_raw/OP-0001.md');
+
+  // Absolute in, absolute out, unchanged.
+  assert.equal(resolveReadPath({ path: '/data/wiki/concepts/latch.md' }), '/data/wiki/concepts/latch.md');
+
+  // A relative path that escapes the vault resolves to null, so it never
+  // becomes a param patch that would smuggle it past boundaryDecision.
+  for (const path of ['../../etc/passwd', 'concepts/../../var/lib/plow/cases/OP-0001.json', '../outside.md']) {
+    assert.equal(resolveReadPath({ path }), null, path);
+  }
+
+  // Nothing usable in, nothing out — the caller keeps the original params and
+  // boundaryDecision decides.
+  for (const path of [undefined, null, '', '   ', 42]) {
+    assert.equal(resolveReadPath({ path }), null, String(path));
+  }
 });
 
 test('no role can reach the session or sub-agent control surface', () => {

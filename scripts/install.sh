@@ -67,10 +67,14 @@ if [[ ! -f "$CREDENTIALS" ]] && ! openplow_can_store_credential; then
 write your token — but only AFTER you have sent the activation SMS.
 
   Windows: NTFS reports every file as 0777, so this is expected there.
-  Run this script from WSL instead, where the filesystem is POSIX:
+  WSL is NOT enough on its own: measured on this machine, a checkout under
+  /mnt/c still reports 0777 from WSL, because the mode is a property of the
+  filesystem, not of the shell. The checkout has to be on WSL's own ext4.
 
       wsl
-      cd $(printf '%s' "$ROOT" | sed 's|^/mnt/|/mnt/|')
+      cd ~
+      git clone https://github.com/kumanaya/openplow
+      cd openplow
       ./scripts/install.sh
 
   In Docker Desktop, turn on Settings > Resources > WSL Integration first, so
@@ -216,6 +220,13 @@ step "Start the agent"
 docker compose -f "$ROOT/compose.yml" up --build -d \
   || die "docker compose failed. Try:  docker compose logs agent"
 ok "container started"
+
+# Before anything execs into it. On a deployment created while the image still
+# ran as root, the state volume is root-owned and the container cannot read its
+# own config as `node`. A fresh volume inherits node:node and this is a no-op;
+# see lib.sh for why it is safe to run unconditionally.
+openplow_ensure_state_owner || die "could not hand the state volume to the image's user"
+ok "state volume owned by $(docker run --rm --entrypoint id "$OPENPLOW_IMAGE" -un 2>/dev/null || echo node)"
 step "Configure the support organization"
 for attempt in {1..30}; do
   if docker compose -f "$ROOT/compose.yml" exec -T agent test -f /var/lib/plow/openclaw.json; then

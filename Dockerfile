@@ -130,3 +130,24 @@ COPY organization/ /opt/plow/organization/
 USER root
 COPY plugin/infra-guard/ /app/dist/extensions/infra-guard/
 COPY plugin/case-workflow/ /app/dist/extensions/case-workflow/
+
+# Back to `node`, and it has to be the LAST `USER` line in this file.
+#
+# The `USER root` above exists only to write into the base's own
+# `/app/dist/extensions/`. Left as the final directive it also becomes the user
+# the container RUNS as — and `docker image inspect` reported
+# `Config.User = root`, so the deployment shipped privileged.
+#
+# That quietly voided the one boundary SECURITY.md calls a kernel boundary.
+# With the container as uid 0, the agent could write a canonical page and run
+# `wiki index` over the whole vault, because root can write a root-owned tree.
+# `scripts/verify-wiki.sh` TEST 7 caught it: eight operations that must fail at
+# the filesystem were succeeding. Every one of them passed the moment this line
+# came back.
+#
+# Nothing needs root at runtime. `/var/lib/plow` and `/etc/plow/openclaw` are
+# `node:node` in this image, so a fresh volume inherits that and the boot
+# writes its own state; `/data` is root-owned and world-readable, and
+# `wiki-bootstrap` hands `_raw` to the agent when the scripts run it as root
+# with an explicit `--user root`.
+USER node

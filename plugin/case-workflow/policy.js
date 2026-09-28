@@ -1,4 +1,8 @@
-import { resolve, sep } from 'node:path';
+// Every path in this module is a path INSIDE the container, so it is POSIX on
+// every host. `node:path` follows the host's rules, which turns `/data/wiki`
+// into `C:\data\wiki` when the test suite runs on Windows and makes the
+// boundary's own comparison host-dependent.
+import { isAbsolute, resolve, sep } from 'node:path/posix';
 
 export const AgentId = Object.freeze({
   FRONTLINE: 'main',
@@ -50,7 +54,20 @@ const CURATOR_BLOCKED = new Set([
 function inside(path, root) {
   if (typeof path !== 'string' || path.trim() === '') return false;
   const normalizedRoot = resolve(root);
-  const normalizedPath = resolve(path);
+  // A relative path is a path the caller means relative to the VAULT, not to
+  // whatever the process happens to have as its working directory. Resolving
+  // it against the CWD is what made `concepts/agent-index.md` resolve into the
+  // agent's own workspace and get blocked — and the model, told only that it
+  // "may read canonical knowledge", read that as "the wiki does not have it"
+  // and answered from public documentation instead. A refusal that teaches the
+  // wrong lesson is worse than the read it prevented.
+  //
+  // Traversal is unchanged: `../../etc/passwd` joins out of the root and fails
+  // the same containment test below.
+  const requested = path.trim();
+  const normalizedPath = isAbsolute(requested)
+    ? resolve(requested)
+    : resolve(normalizedRoot, requested);
   return normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}${sep}`);
 }
 
@@ -77,13 +94,17 @@ export function boundaryDecision({ agentId, toolName, params = {}, wikiPath = '/
       return 'frontline may spawn only the configured investigator or curator';
     }
     if (toolName === 'read' && !inside(params.path, wikiPath)) {
-      return 'frontline may read canonical knowledge only';
+      // The accepted path belongs in the reason. A block the model cannot act
+      // on gets turned into a wrong conclusion, and this one was: "you may
+      // read canonical knowledge only" reads as "the wiki has nothing", which
+      // is not the same answer as "ask again with a path under the root".
+      return `frontline may read canonical knowledge only, under ${wikiPath} — pass a path relative to that root, or absolute`;
     }
   }
 
   if (agentId === AgentId.INVESTIGATOR) {
     if (INVESTIGATOR_BLOCKED.has(toolName)) return 'investigator uses approved Latch capabilities, not local writes, shells, customer messaging or customer sessions';
-    if (toolName === 'read' && !inside(params.path, wikiPath)) return 'investigator may read canonical knowledge only';
+    if (toolName === 'read' && !inside(params.path, wikiPath)) return `investigator may read canonical knowledge only, under ${wikiPath} — pass a path relative to that root, or absolute`;
     if (toolName === 'sessions_spawn') return 'investigator does not create agents or delegate cases';
   }
 
@@ -93,6 +114,30 @@ export function boundaryDecision({ agentId, toolName, params = {}, wikiPath = '/
   }
 
   return null;
+}
+
+/**
+ * The path a `read` will actually open, given what the model asked for.
+ *
+ * The read tool resolves a RELATIVE path against the agent's own workspace,
+ * not against the vault, so `concepts/agent-index.md` opens
+ * `/var/lib/plow/workspace/concepts/agent-index.md` and fails with ENOENT.
+ * Letting that call through teaches nothing; the model retries with the same
+ * shape and eventually reports the wiki as empty. So the relative form is
+ * rewritten to the absolute one here, at the boundary, where the vault root is
+ * known.
+ *
+ * Pure, and it only ever resolves INSIDE the root: a path that escapes it is
+ * returned as-is, so `boundaryDecision` still refuses it.
+ */
+export function resolveReadPath({ path, wikiPath = '/data/wiki' }) {
+  if (typeof path !== 'string' || path.trim() === '') return null;
+  const requested = path.trim();
+  if (isAbsolute(requested)) return resolve(requested);
+  const root = resolve(wikiPath);
+  const absolute = resolve(root, requested);
+  if (absolute !== root && !absolute.startsWith(`${root}${sep}`)) return null;
+  return absolute;
 }
 
 /**

@@ -8,7 +8,7 @@ sources:
   - resource: https://github.com/plow-pbc/latch/blob/main/DESIGN.md
   - resource: https://github.com/plow-pbc/latch/blob/main/packages/device-core/src/policyEngine.ts
 created: 2026-09-25
-updated: 2026-09-26
+updated: 2026-09-28
 ---
 
 Every operation becomes one Intent, built **on the Mac** from an authenticated
@@ -45,10 +45,20 @@ owner's team. The owner may use a separate internal OpenClaw agent connected to
 Latch via MCP for authorized work on the operator's own systems. Customer text
 does not authorize that work.
 
-The OpenPlow image inherits an MCP bridge from the Plow base. This repository
-does not configure a per-session gate proving that customer sessions cannot
-reach Latch tools. The prompt is not isolation; keep privileged Latch tools out
-of the customer-facing runtime until a technical boundary is verified.
+The OpenPlow image inherits an MCP bridge from the Plow base, and this
+repository now closes it to the customer-facing roles **mechanically, in two
+independent places**:
+
+- `organization/openclaw.patch.json5` runs every role on
+  `tools.profile: "minimal"` and denies `bundle-mcp` for `main` and `curator`.
+  The Investigator is the only role that keeps it.
+- The `case-workflow` plugin's `before_tool_call` hook repeats the check at
+  runtime against the authoritative Gateway `agentId`, and treats any
+  `mcp__*` or `plow_*` tool name as blocked for those two roles.
+
+So the answer to "can a customer message reach Latch?" is a configuration and
+a hook, not a promise in the persona. The prompt saying it is not allowed was
+never the boundary; the deny list and the hook are.
 
 The wiki's canonical/candidate write boundary is the filesystem: the support
 agent runs unprivileged, canonical pages and history are root-owned, and the
@@ -92,5 +102,6 @@ lists what it stored and lets them revoke any entry. `You define what safe
 means` is true of the *policy* and of the approval mode; the rules themselves
 are the ones that policy produced.
 
-See [what Latch is](/concepts/latch.md) and
+See [what Latch is](/concepts/latch.md),
+[what the sandbox actually permits](/concepts/latch-sandbox-boundary.md) and
 [refusals worth escalating](/skills/a-refusal-is-not-a-bug-report.md).

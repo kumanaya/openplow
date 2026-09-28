@@ -77,6 +77,38 @@ for want in AGENTS.md wiki.toml _raw; do
   [[ -e "$FROM/$want" ]] || MISSING+=("$want")
 done
 
+# Which pages in the source differ from the ones already in the vault.
+#
+# `wiki-import --check` cannot answer this. It reports "would overwrite" for
+# every page that is PRESENT, whether it changed or not, so on a vault seeded
+# from an older checkout it lists all of them and distinguishes nothing. A
+# plain re-import is worse: it succeeds, copies only the genuinely new pages,
+# and leaves every edited page silently behind — which is exactly how a
+# deployment ends up answering customers from a vault three commits stale.
+#
+# A checksum diff can answer it, and the vault is a deployment that outlives
+# the checkout it was seeded from, so the question is worth asking on every run.
+stale_pages() {
+  local src="$1" source vault
+  # `sha256sum` output is not portable enough to compare directly: GNU prints
+  # "  path" and MSYS prints " *path", so the two sides of this diff have to be
+  # normalized to `hash<TAB>path` before anything can be compared at all.
+  normalize() {
+    awk '{ p = $2; sub(/^\*/, "", p); sub(/^\.\//, "", p); print $1 "\t" p }'
+  }
+  source="$( cd "$src" && find . -name '*.md' -type f -exec sha256sum {} + | normalize )" || return 0
+  vault="$(openplow_wiki_run sh -c \
+    'cd "$WIKI_PATH" && find . -name "*.md" -type f \
+       -not -path "./_raw/*" -not -path "./_meta/*" -not -path "./.wiki/*" \
+       -exec sha256sum {} +' 2>/dev/null | normalize )" || return 0
+  [[ -n "$source" && -n "$vault" ]] || return 0
+  awk -F'\t' 'NR==FNR { want[$2]=$1; next } ($2 in want) && want[$2]!=$1 { print $2 }' \
+    <(printf '%s\n' "$source") <(printf '%s\n' "$vault")
+}
+
+
+
+
 # ---------------------------------------------------------------- what is there
 step "Where things stand"
 note "volume: $OPENPLOW_VOLUME  (mounted at $OPENPLOW_MOUNT)"
@@ -86,6 +118,17 @@ if [[ -z "$EXISTING" ]]; then
   note "no vault yet — this will create one"
 else
   note "$EXISTING"
+fi
+
+STALE=""
+if [[ -n "$EXISTING" ]]; then
+  STALE="$(stale_pages "$FROM" || true)"
+fi
+
+if [[ -n "$STALE" ]]; then
+  STALE_COUNT="$(printf '%s\n' "$STALE" | grep -c . || true)"
+  warn "$STALE_COUNT page(s) in the vault differ from this checkout:"
+  printf '%s\n' "$STALE" | sed 's|^|      |'
 fi
 
 if [[ "$MODE" == "import" && ${#MISSING[@]} -eq 0 ]]; then
@@ -100,6 +143,12 @@ fi
 note "$COUNT pages in $FROM"
 if [[ "$FORCE" -eq 0 && "$CHECK" -eq 0 ]]; then
   note "existing pages are left alone; pass --force to overwrite, --check to preview"
+  if [[ -n "$STALE" ]]; then
+    note "so this run will NOT change the $STALE_COUNT page(s) listed above."
+    note "to refresh them from this checkout:  $0 --force"
+    note "the vault keeps history beside itself, so that is reversible:"
+    note "    wiki history $OPENPLOW_MOUNT/wiki/<page>.md"
+  fi
 fi
 
 if [[ "$CHECK" -eq 1 ]]; then

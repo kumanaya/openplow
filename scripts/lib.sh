@@ -6,6 +6,19 @@
 # The image tag and the volume name are here because getting either wrong
 # produces a script that appears to work against the wrong vault. compose.yml
 # carries the same volume name next to its declaration.
+#
+# Every container path here is a POSIX path INSIDE the container —
+# `/opt/plow/bin/wiki-peek`, `/data/wiki`. Git Bash on Windows rewrites any
+# argument that looks like a leading-slash path into a Windows one before the
+# process ever sees it, so `/opt/plow/bin/wiki-peek` arrives as
+# `C:/Program Files/Git/opt/plow/bin/wiki-peek` and the container dies with
+# "exec ... failed: No such file or directory". The error names a file that
+# does not exist, so it reads as a broken image rather than a mangled argument.
+#
+# One variable, set here because every docker call in the repository is either
+# in this file or calls something in it. macOS and Linux ignore it.
+export MSYS_NO_PATHCONV=1
+export MSYS2_ARG_CONV_EXCL='*'
 
 OPENPLOW_ROOT="${OPENPLOW_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
@@ -58,6 +71,43 @@ openplow_wiki_import() {
     | docker run --rm -i --user root \
         -v "$OPENPLOW_VOLUME:$OPENPLOW_MOUNT" \
         "$OPENPLOW_IMAGE" /opt/plow/bin/wiki-import - "$force" $check
+}
+
+# The two compose volumes that hold container state, named by compose.yml. Both
+# survive `down -v` on purpose, which is exactly what makes them outlive the
+# container — and exactly what makes stale ownership survive an upgrade.
+OPENPLOW_STATE_VOLUME="${OPENPLOW_STATE_VOLUME:-openplow-support_state}"
+OPENPLOW_CONFIG_VOLUME="${OPENPLOW_CONFIG_VOLUME:-openplow-support_config}"
+
+# Hand a volume to the user the image runs as.
+#
+# This image used to run as root, so on any deployment created before that was
+# fixed every file in these volumes is root-owned. The boot now runs as `node`
+# and cannot read its own configuration:
+#
+#   /var/lib/plow/openclaw.json  -> the container exits 1
+#   /etc/plow/openclaw/gateway.json5 -> the boot parks and never serves
+#
+# Both read as a broken image rather than as stale ownership, which is why
+# every symptom had to be chased twice.
+#
+# A FRESH volume needs none of this — it inherits `node:node` from the image's
+# own directory, the same mechanism that makes /data safe. So this is a no-op
+# on a new install and the one-time migration on an old one, which is why it
+# is safe to run every time.
+#
+# The user is named rather than numbered so a drift from the Dockerfile's final
+# `USER` shows up in the command rather than in a silent numeric mismatch.
+openplow_ensure_volume_owner() { # <volume> <mountpoint>
+  docker run --rm --user root \
+    -v "$1:$2" \
+    --entrypoint sh "$OPENPLOW_IMAGE" -c \
+    "chown -R node:node '$2' 2>/dev/null || true"
+}
+
+openplow_ensure_state_owner() {
+  openplow_ensure_volume_owner "$OPENPLOW_STATE_VOLUME" /var/lib/plow
+  openplow_ensure_volume_owner "$OPENPLOW_CONFIG_VOLUME" /etc/plow/openclaw
 }
 
 # ── the Plow account CLI ──────────────────────────────────────────────────────

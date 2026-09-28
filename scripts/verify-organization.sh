@@ -2,6 +2,7 @@
 # Exercise the exact native OpenClaw multi-agent patch against a clean offline
 # Plow bootstrap. Scratch volumes are deleted on exit.
 set -euo pipefail
+export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'  # see lib.sh — every path here is a path INSIDE the container
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMG="${1:-${IMG:-openplow-support:verify}}"
@@ -14,7 +15,10 @@ cleanup() {
 trap cleanup EXIT
 
 if ! docker image inspect "$IMG" >/dev/null 2>&1; then
-  docker build -t "$IMG" "$ROOT"
+  # Relative context, for the reason lib.sh:30-32 gives: `$ROOT` is an absolute
+  # path the docker CLI may not resolve — `/mnt/c/...` under WSL — and the build
+  # fails with "could not find docker" wording that points at the wrong thing.
+  ( cd "$ROOT" && docker build -t "$IMG" . )
 fi
 
 docker volume create "$STATE_VOLUME" >/dev/null
