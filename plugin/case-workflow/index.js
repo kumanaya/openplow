@@ -85,6 +85,7 @@ function logBlock(toolName, ctx, blockReason) {
     agentId: ctx?.agentId ?? null,
     sessionKey: typeof ctx?.sessionKey === 'string' && ctx.sessionKey !== '' ? 'present' : 'absent',
     requester: ctx?.requester ? 'present' : 'absent',
+    requesterKeys: ctx?.requester && typeof ctx.requester === 'object' ? Object.keys(ctx.requester).sort().join(',') : typeof ctx?.requester,
     requesterSenderId: typeof ctx?.requester?.senderId === 'string' && ctx.requester.senderId !== '' ? 'present' : 'absent',
     ctxKeys: ctx && typeof ctx === 'object' ? Object.keys(ctx).sort().join(',') : typeof ctx,
   };
