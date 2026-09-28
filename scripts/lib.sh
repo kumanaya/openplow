@@ -6,6 +6,19 @@
 # The image tag and the volume name are here because getting either wrong
 # produces a script that appears to work against the wrong vault. compose.yml
 # carries the same volume name next to its declaration.
+#
+# Every container path here is a POSIX path INSIDE the container —
+# `/opt/plow/bin/wiki-peek`, `/data/wiki`. Git Bash on Windows rewrites any
+# argument that looks like a leading-slash path into a Windows one before the
+# process ever sees it, so `/opt/plow/bin/wiki-peek` arrives as
+# `C:/Program Files/Git/opt/plow/bin/wiki-peek` and the container dies with
+# "exec ... failed: No such file or directory". The error names a file that
+# does not exist, so it reads as a broken image rather than a mangled argument.
+#
+# One variable, set here because every docker call in the repository is either
+# in this file or calls something in it. macOS and Linux ignore it.
+export MSYS_NO_PATHCONV=1
+export MSYS2_ARG_CONV_EXCL='*'
 
 OPENPLOW_ROOT="${OPENPLOW_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 

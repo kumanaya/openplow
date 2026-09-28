@@ -7,6 +7,8 @@
 # can run without a Plow account runs first, so a broken build is reported
 # before a missing token. Each failure prints the fix underneath it.
 set -uo pipefail
+export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'  # see lib.sh — every path here is a path INSIDE the container
+
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TOOLS="$ROOT/.tools/plow-agents"
