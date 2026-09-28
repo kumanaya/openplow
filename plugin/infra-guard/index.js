@@ -20,97 +20,31 @@
 // question answered by the operator, not by a support agent texting customers.
 // That is the one place this is deliberately stricter than the persona.
 
-import {
-  infraLeak,
-  judgementCandidates,
-  judgementPrompt,
-  judgementSaysLeak,
-  messageText,
-  revisionInstruction,
-} from './rules.js';
+import { buildCanonicalCorpus, infraLeak, messageText, revisionInstruction } from './rules.js';
 
 // Shipped inside OpenClaw's own dist/extensions (see Dockerfile), so the SDK is
 // two levels up.
 import { definePluginEntry } from '../../plugin-sdk/plugin-entry.js';
-import { completeWithPreparedSimpleCompletionModel, prepareSimpleCompletionModelForAgent } from '../../plugin-sdk/simple-completion-runtime.js';
 
 const log = (msg) => console.log(`[infra-guard] ${msg}`);
 
-// One judge per sentence, for the life of the process. The same sentence comes
-// back through several doors in a single turn, and a customer paying for a
-// second opinion on the same words is a cost with no information in it.
-const decided = new Map();
-const DECIDED_LIMIT = 512;
+// The deployment's own knowledge, read once at boot.
+//
+// Not a cache of decisions: a Set of the words this deployment has already
+// published, so a match that is a quotation is not a leak. It is what makes the
+// deterministic rules safe here — three of five of them match this product's own
+// pages, and the guard was rewriting correct answers because of it.
+const canonical = buildCanonicalCorpus(process.env.WIKI_PATH || '/data/wiki');
+log(`canonical corpus: ${canonical.pages} pages, ${canonical.text.length} chars`);
 
-function remember(sentence, isLeak) {
-  if (decided.size >= DECIDED_LIMIT) decided.clear();
-  decided.set(sentence, isLeak);
-}
-
-/**
- * The semantic half of the guard.
- *
- * "Is the agent describing its own machine, or quoting a page that says the
- * same thing?" is a question about meaning. It was being answered with a
- * first-person regex, which is a question about grammar — so it was English
- * only, and it could not see the third person. This deployment is Portuguese,
- * and "o container roda como node" is third person and exactly the thing that
- * got through.
- *
- * It runs at the finalize door only. The other two must stay synchronous — the
- * plugin API does not await the hook, and an async one has its `{ block: true }`
- * discarded — and a model call cannot be synchronous. Finalize is also the
- * right place: a message caught here never reaches the other two.
- */
-async function judgeNarration(text, agentId) {
-  const candidates = judgementCandidates(text);
-  if (candidates.length === 0) return null;
-
-  let prepared;
-  try {
-    prepared = await prepareSimpleCompletionModelForAgent({ agentId });
-  } catch (error) {
-    // A judge that cannot start must not become a reason to rewrite a correct
-    // answer. The deterministic rules already ran, and the persona covers the
-    // rest.
-    log(`judge unavailable: ${error?.message ?? error}`);
-    return null;
-  }
-
-  for (const { text: sentence, hit } of candidates) {
-    if (decided.has(sentence)) {
-      if (decided.get(sentence)) return { ...hit, phrase: hit.phrase, sentence };
-      continue;
-    }
-    let answer = '';
-    try {
-      const result = await completeWithPreparedSimpleCompletionModel(prepared, {
-        messages: [{ role: 'user', content: judgementPrompt(sentence, hit) }],
-        maxTokens: 8,
-      });
-      answer = typeof result === 'string' ? result : (result?.text ?? result?.content ?? '');
-    } catch (error) {
-      log(`judge failed: ${error?.message ?? error}`);
-      continue;
-    }
-    const isLeak = judgementSaysLeak(answer);
-    remember(sentence, isLeak);
-    log(`judge rule="${hit.id}" phrase="${hit.phrase}" verdict=${isLeak ? 'LEAK' : 'DOC'}`);
-    if (isLeak) return { ...hit, sentence };
-  }
-  return null;
-}
 export default definePluginEntry({
   id: 'infra-guard',
   name: 'OpenPlow infrastructure guard',
   description: 'A customer support agent never discloses the host, container, runtime, paths or model it runs on.',
   register(api) {
-    // 1. The reply of a turn, before anyone sees it. This is the only door
-    //    that can afford a model, and therefore the only one that sees the
-    //    difference between self-description and a citation.
-    api.on('before_agent_finalize', async (event, ctx) => {
-      const text = messageText(event?.lastAssistantMessage);
-      const hit = infraLeak(text) ?? (await judgeNarration(text, ctx?.agentId));
+    // 1. The reply of a turn, before anyone sees it.
+    api.on('before_agent_finalize', (event, ctx) => {
+      const hit = infraLeak(messageText(event?.lastAssistantMessage), canonical);
       if (!hit) return;
       log(`revise session=${ctx?.sessionKey} rule="${hit.id}" phrase="${hit.phrase}"`);
       const instruction = revisionInstruction(hit);
@@ -132,7 +66,7 @@ export default definePluginEntry({
         text = p.message ?? p.text ?? p.body;
       }
       if (!text) return;
-      const hit = infraLeak(messageText(text));
+      const hit = infraLeak(messageText(text), canonical);
       if (!hit) return;
       log(`block tool=${name} rule="${hit.id}" phrase="${hit.phrase}"`);
       return { block: true, blockReason: `Not sent. ${revisionInstruction(hit)}` };
@@ -140,7 +74,7 @@ export default definePluginEntry({
 
     // 3. The last door.
     api.on('message_sending', (event) => {
-      const hit = infraLeak(messageText(event?.content));
+      const hit = infraLeak(messageText(event?.content), canonical);
       if (!hit) return;
       log(`cancel rule="${hit.id}" phrase="${hit.phrase}"`);
       return { cancel: true, cancelReason: `infra-guard: "${hit.phrase}" is deployment detail, not a support answer` };

@@ -1,4 +1,5 @@
-// What counts as a deployment disclosure, and how to say it without a list.
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 //
 // A prompt rule holds most of the time; a hostname in a support chat is a
 // fingerprinting problem forever. So the rule is enforced by the Gateway at
@@ -64,6 +65,73 @@ const ALWAYS = [
 ];
 
 /**
+ * The same rules, exported so they can be checked against this product's own
+ * pages instead of assumed clean.
+ *
+ * A deterministic rule is only safe when no canonical page can contain what
+ * it matches. That premise was assumed three times in this repo and was wrong
+ * every time: `/data/wiki` is the receipt, `/var/lib/plow` is in
+ * `concepts/where-data-lives.md`, and "Python 3.11" is a product requirement.
+ */
+export const ALWAYS_PROBE = ALWAYS.map(({ id, pattern }) => ({ id, pattern }));
+
+
+/**
+ * The knowledge this deployment already publishes.
+ *
+ * A deterministic rule can only be safe when no canonical page contains what it
+ * matches, and that premise was assumed three times here and wrong every time:
+ * `/data/wiki` is the receipt, `/var/lib/plow` is in
+ * `concepts/where-data-lives.md`, `docker compose down` is in the same page, and
+ * "Python 3.11" is a product requirement. Measured, three of five rules matched
+ * the product's own documentation and were rewriting correct answers.
+ *
+ * So the guard stops guessing whether a match is a leak or a citation and
+ * checks: if the phrase appears in the canonical corpus, the agent is quoting
+ * knowledge this deployment chose to publish, and that is not a disclosure.
+ * It is also the check that needs no model and no language: the vault is
+ * mounted, and the text is the text.
+ *
+ * The corollary is a real limit, and it is the right one: something the owner
+ * has written into the wiki is not a secret any more. That is the owner's
+ * call to make, not the guard's.
+ */
+export function buildCanonicalCorpus(wikiPath) {
+  const text_out = [];
+  let pages = 0;
+  const walk = (dir, depth) => {
+    if (depth > 6) return;
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === '_raw' || entry.name === '.wiki' || entry.name === '.git') continue;
+        walk(full, depth + 1);
+      } else if (entry.name.endsWith('.md')) {
+        pages += 1;
+        let text;
+        try {
+          text = readFileSync(full, 'utf8');
+        } catch {
+          continue;
+        }
+        // The lowercased text is kept whole, because a quotation is verbatim:
+        // "git push" is four characters per token and is still a citation, and
+        // a token filter long enough to keep it would also launder a bare
+        // "node". Containment on the exact phrase is the honest test.
+        text_out.push(text.toLowerCase());
+      }
+    }
+  };
+  walk(wikiPath, 0);
+  return { text: text_out.join('\n'), pages };
+}
+/**
  * Vocabulary that raises the question. NOT a verdict.
  *
  * These words are in this product's own pages — "container" in ten of them,
@@ -111,71 +179,28 @@ function firstHit(text, rules) {
  *
  * @returns {{id: string, phrase: string, why: string} | null}
  */
-export function infraLeak(text) {
+export function infraLeak(text, corpus) {
   if (typeof text !== 'string' || text.length === 0) return null;
-  return firstHit(text, ALWAYS);
+  const hit = firstHit(text, ALWAYS);
+  if (!hit) return null;
+  // Quoting the knowledge base is the product working. If the owner has
+  // published the phrase, it is not a secret and the model is not leaking it.
+  if (corpus && isPublished(corpus, hit.phrase)) return null;
+  return hit;
 }
 
 /**
- * The sentences worth a second opinion: narration vocabulary present, no
- * deterministic hit in the text.
- *
- * Pure, so the routing is testable without a model — which matters, because a
- * security rule whose only test is "we tried it once live" is not a test.
- *
- * @returns {Array<{text: string, hit: {id: string, phrase: string, why: string}}>}
+ * A quotation is verbatim. The phrase has to appear in what the deployment has
+ * published, character for character, so a partial echo cannot launder a
+ * disclosure and a four-character command can still be a citation.
  */
-export function judgementCandidates(text) {
-  if (typeof text !== 'string' || text.length === 0) return [];
-  if (infraLeak(text)) return [];
-  return sentences(text)
-    .map((sentence) => ({ text: sentence, hit: firstHit(sentence, NARRATION) }))
-    .filter((c) => c.hit);
+function isPublished(corpus, phrase) {
+  const haystack = typeof corpus === 'string' ? corpus : (corpus?.text ?? '');
+  if (!haystack) return false;
+  return haystack.includes(String(phrase).toLowerCase());
 }
 
-/**
- * The one question the model is asked.
- *
- * Deliberately narrow, and deliberately biased: the cost of a false positive is
- * a correct answer rewritten, which is the failure this repo already shipped
- * twice. So the model is told that quoting documentation is not a disclosure,
- * and that anything short of a clear self-description is documentation.
- */
-export function judgementPrompt(sentence, hit) {
-  return [
-    `A support agent is about to send this sentence to a customer:`,
-    ``,
-    sentence,
-    ``,
-    `It contains "${hit.phrase}" (${hit.why}).`,
-    ``,
-    `Answer ONE question: is the agent describing the machine it runs on,`,
-    `or is it citing/referencing documentation, a product fact, or the`,
-    `customer's own setup?`,
-    ``,
-    `LEAK — the agent is describing its own host, container, runtime,`,
-    `permissions or paths, for example "I run in a container", "the kernel`,
-    `refused my write", "my filesystem is read-only here".`,
-    `DOC — anything else. Quoting a page, describing the product, or explaining`,
-    `a concept that happens to use one of these words is DOC, even in the third`,
-    `person and even when the machine being described is the agent's.`,
-    ``,
-    `When you are not certain, answer DOC.`,
-    ``,
-    `Reply with exactly one word: LEAK or DOC.`,
-  ].join('\n');
-}
 
-/**
- * The model's answer, read conservatively: only an explicit LEAK blocks, and a
- * judge that failed, timed out or answered nonsense blocks nothing.
- *
- * @returns {boolean} true when the sentence is a disclosure
- */
-export function judgementSaysLeak(answer) {
-  if (typeof answer !== 'string') return false;
-  return /^\s*LEAK\b/i.test(answer.trim());
-}
 
 
 /** The text an outbound message actually carries, whatever shape it arrived in. */

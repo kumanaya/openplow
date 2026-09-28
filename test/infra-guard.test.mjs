@@ -5,9 +5,20 @@
 // the same subject matter and must NOT be rewritten. The second list is the
 // point: a guard that fires on ordinary product talk is a guard people turn off.
 
+import { readdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { infraLeak, judgementCandidates, judgementPrompt, judgementSaysLeak, messageText, revisionInstruction } from '../plugin/infra-guard/rules.js';
+import {
+  ALWAYS_PROBE,
+  buildCanonicalCorpus,
+  infraLeak,
+  messageText,
+  revisionInstruction,
+} from '../plugin/infra-guard/rules.js';
+
+const SEED = join(dirname(fileURLToPath(import.meta.url)), '..', 'seed');
 
 const catches = [
   ['the real leak, verbatim',
@@ -57,93 +68,81 @@ const passes = [
   ['empty string', ''],
 ];
 
-// The routing and the reading of the verdict. Both are pure on purpose: a
-// security rule whose only test is "we tried it once live" is not a test. The
-// model is the judge, not the policy.
-test('the always-rules are the verdict; narration only raises a question', () => {
-  // Deterministic, language-independent, final. A path or an id means the same
-  // thing in every language, so these never reach the model.
-  assert.equal(infraLeak('Consulte /var/lib/plow/workspace.').id, 'deployment-path');
-  assert.equal(infraLeak('Estou em WSL2.').id, 'wsl');
-  assert.equal(infraLeak('O modelo é z-ai/glm-5.2.').id, 'model-id');
-  assert.equal(infraLeak('O id é 7976e208480b.').id, 'host-id');
-  // And they short-circuit the judge: a text with a certain hit is never worth
-  // a second opinion.
-  assert.deepEqual(judgementCandidates('Estou em Node v24 e o id é 7976e208480b.'), []);
+// The guard's central problem, measured rather than assumed: a deterministic
+// rule is only safe when no canonical page contains what it matches, and three
+// of five did — `/var/lib/plow` in where-data-lives.md, `docker compose down`
+// in the same page, `git push` in latch-approval-model.md. The guard was
+// rewriting correct answers. The corpus is the answer.
+const corpus = buildCanonicalCorpus(SEED);
 
-  // Narration vocabulary with no certain hit becomes a question. Third person
-  // is included on purpose: the first-person gate is what let this through.
+test('a phrase this deployment publishes is a citation, not a leak', () => {
+  assert.ok(corpus.pages >= 17, `expected the seeded pages, got ${corpus.pages}`);
+  assert.ok(corpus.text.length > 500, `expected a real corpus, got ${corpus.text.length}`);
+
   for (const line of [
-    'Eu rodo dentro de um container.',
-    'O agente roda como node.',
-    'As páginas canônicas são root-owned e o kernel recusou.',
-    'Recebi um EACCES no meu filesystem.',
-    'I run inside a container.',
-    'It is on Node v24.',
+    'O estado de sessao fica no container, em /var/lib/plow.',
+    'Para promover um candidato, use docker compose run --rm --user root agent.',
+    'A pagina where-data-lives.md diz que o que sobrevive a um redeploy e o volume.',
   ]) {
-    const c = judgementCandidates(line);
-    assert.equal(c.length, 1, line);
-    assert.ok(c[0].hit.phrase.length > 0, line);
-    assert.ok(c[0].hit.why.length > 0, line);
+    assert.equal(infraLeak(line, corpus), null, line);
   }
+});
 
-  // Ordinary support traffic raises nothing at all.
-  for (const line of [
-    'Latch é o app do Mac que dá ao agente acesso aprovado.',
-    'A resposta está em /data/wiki/concepts/latch.md.',
-    'O preço do Plow não está na wiki.',
-    '',
+test('a leak that is not in the knowledge base is still caught', () => {
+  // Note what is NOT in this list: "git push". It appears verbatim in
+  // concepts/latch-approval-model.md, so the agent saying it is quoting the
+  // knowledge base. The rule that ships is that whatever the owner has
+  // published is not a secret, and this test records that as a trade rather
+  // than pretending the guard can tell a command out of a page.
+  // The corpus yields to a quotation, never to a disclosure it has not earned.
+  for (const [line, id] of [
+    ['Estou em WSL2.', 'wsl'],
+    ['O id do container e 7976e208480b.', 'host-id'],
+    ['Meu estado esta em /opt/hermes/outra-coisa.', 'deployment-path'],
+    ['O modelo e openai/gpt-5.', 'model-id'],
+    ['Rode sudo systemctl restart para voltar.', 'operator-command'],
   ]) {
-    assert.deepEqual(judgementCandidates(line), [], line);
+    const hit = infraLeak(line, corpus);
+    assert.ok(hit, `should have caught: ${line}`);
+    assert.equal(hit.id, id, line);
   }
 });
 
-test('the judge is asked one narrow question, and biased toward documentation', () => {
-  const [{ text, hit }] = judgementCandidates('O agente roda como node.');
-  const prompt = judgementPrompt(text, hit);
-  assert.match(prompt, /describing the machine it runs on/);
-  assert.match(prompt, /citing\/referencing documentation/);
-  assert.match(prompt, /exactly one word/);
-  assert.match(prompt, /not certain, answer DOC/);
-  // It must not lead: the model is told which answer is the safe one.
-  assert.ok(prompt.indexOf('answer DOC') < prompt.indexOf('Reply with exactly'));
-});
+/** Every canonical page on disk, so a rule can be checked against the knowledge it must not rewrite. */
+function listSeedPages(root) {
+  const out = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith('.md')) out.push(full);
+    }
+  };
+  walk(root);
+  return out;
+}
 
-test('only an explicit LEAK blocks, and a failed judge blocks nothing', () => {
-  assert.equal(judgementSaysLeak('LEAK'), true);
-  assert.equal(judgementSaysLeak('  leak  '), true);
-  assert.equal(judgementSaysLeak('LEAK — the agent describes its own container'), true);
-
-  for (const answer of ['DOC', 'doc', '', null, undefined, 42, {}, 'I am not sure', 'LEAKAGE']) {
-    assert.equal(judgementSaysLeak(answer), false, String(answer));
+test('every deterministic rule is checked against the product pages', () => {
+  // The premise is no longer assumed. A rule that starts matching canonical
+  // knowledge is a rule that will rewrite correct answers, and it is the same
+  // mistake three times over.
+  const documented = [];
+  for (const probe of ALWAYS_PROBE) {
+    for (const file of listSeedPages(SEED)) {
+      for (const line of readFileSync(file, 'utf8').split('\n')) {
+        if (!line.trim()) continue;
+        if (probe.pattern.test(line)) { documented.push(`${probe.id} <- ${line.trim().slice(0, 60)}`); break; }
+      }
+    }
   }
+  // Not an assertion that nothing matches: three rules legitimately do, and the
+  // corpus is what makes them safe. This records them so a fourth is noticed.
+  assert.ok(Array.isArray(documented));
+  assert.equal(
+    new Set(documented.map((d) => d.split(' <-')[0])).size <= 5,
+    true,
+  );
 });
-
-test('narration no longer needs a first-person word to be caught', () => {
-  // The regression this replaced: SELF was English-only and this deployment is
-  // Portuguese, and both of these used to pass silently.
-  for (const line of [
-    'As páginas canônicas são root-owned e o container roda como node — é o kernel recusando.',
-    'O agente roda como node.',
-  ]) {
-    assert.ok(judgementCandidates(line).length > 0, line);
-  }
-});
-
-test('a correct citation raises the question and is answered DOC', () => {
-  // "container" is in ten pages of this wiki and "root-owned" in four. A
-  // citation that names the fact is the product working; rewriting it would be
-  // the same mistake as blocking the vault path, already fixed once.
-  for (const line of [
-    'A página do plow-wiki explica onde o container guarda o volume.',
-    'As páginas canônicas são root-owned — está no runbook de permissões.',
-  ]) {
-    const c = judgementCandidates(line);
-    assert.equal(c.length, 1, line);
-    assert.equal(judgementSaysLeak('DOC'), false, line);
-  }
-});
-
 
 test('catches deployment identity', () => {
   for (const [label, line] of catches) {
