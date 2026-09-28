@@ -103,6 +103,27 @@ booted with.
 **Rollback is not a version tag.** `plow-agents image promote SLUG <old-digest>`
 rolls back, and `plow-agents image promote SLUG --none` stops new provisions.
 
+## The human step the pages compress
+
+The index spells the last mile out, and it is a person, not a command:
+
+> Getting your agent one-click deployable is done with the Plow team. Message
+> **danedelattre** on the [AI Worth Using Discord](https://discord.gg/ZSJZQ7Wmu)
+> and we will set it up with you.
+
+The three steps that precede it:
+
+1. Watch the video on getting an agent running in Plow's cloud — it is embedded
+   on the [Agent Index page](https://aiworthusing.com/agent-index).
+2. Deploy your image with `plow-agents` and **make sure it texts you back**.
+   The index's own note applies to the *Hermes* base; this repository builds on
+   `plow-openclaw-agent`, so there is no Hermes version to match.
+3. Post your repo, the **commit hash** and your **Agent Index ID** in the
+   Discord verification thread.
+
+So the honest answer to "why is my agent not installable" is usually step 2 —
+the agent never texted back — or step 3, because nobody asked.
+
 ## GHCR specifics that cost people an hour
 
 - Use a **classic** GitHub PAT with `write:packages`. A fine-grained PAT cannot

@@ -25,6 +25,10 @@ for a Plow answer is a URL the customer can open and check in ten seconds.
 | `plow-pbc/plow` | the relay and the API | private |
 | [Publish your agent](https://aiworthusing.com/agent-index/publish) | the two routes onto the Agent Index | — |
 | [The hackathon](https://luma.com/zhkhsnpa) | dates, rules and prizes | — |
+| [kumanaya/openplow](https://github.com/kumanaya/openplow) | this deployment, open source | MIT |
+| [AI Worth Using](https://aiworthusing.com/) | the show, the community and the indexes | — |
+| [AgentCribs](https://agentcribs.pwv.com/) | the curated PWV community that hosts the events | — |
+| [The community Discord](https://discord.gg/ZSJZQ7Wmu) | where verification and 1-click deploy are requested | — |
 
 ## Where the real answer usually is
 

@@ -77,6 +77,20 @@ automatically enables iMessage support and Latch — which is what lets your
 agent safely control your Mac. See
 [the publish page](/skills/how-to-publish-your-agent-on-the-agent-index.md).
 
+## Where this actually happens
+
+**Discord — [discord.gg/ZSJZQ7Wmu](https://discord.gg/ZSJZQ7Wmu).** Questions,
+test ideas and the daily livestream Q&A are all handled there, and it is where
+you get your agent verified and made one-click deployable. The event page also
+carries a second invite code for the same server; both resolve to the same
+room, so a dead-looking link is usually a stale code rather than a closed
+community.
+
+**AgentCribs** is the community that hosts the event and the October 6 meetup.
+It is curated with a waitlist application, and its events are not open
+attendance — being in the Discord and being at the event are different things.
+See [AI Worth Using](/entities/orgs/ai-worth-using.md).
+
 ## How OpenPlow is positioned for it
 
 OpenPlow is a **first-hire support agent**: it owns a real role (customer
