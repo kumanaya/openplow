@@ -1,4 +1,8 @@
-import { isAbsolute, resolve, sep } from 'node:path';
+// Every path in this module is a path INSIDE the container, so it is POSIX on
+// every host. `node:path` follows the host's rules, which turns `/data/wiki`
+// into `C:\data\wiki` when the test suite runs on Windows and makes the
+// boundary's own comparison host-dependent.
+import { isAbsolute, resolve, sep } from 'node:path/posix';
 
 export const AgentId = Object.freeze({
   FRONTLINE: 'main',
@@ -110,6 +114,30 @@ export function boundaryDecision({ agentId, toolName, params = {}, wikiPath = '/
   }
 
   return null;
+}
+
+/**
+ * The path a `read` will actually open, given what the model asked for.
+ *
+ * The read tool resolves a RELATIVE path against the agent's own workspace,
+ * not against the vault, so `concepts/agent-index.md` opens
+ * `/var/lib/plow/workspace/concepts/agent-index.md` and fails with ENOENT.
+ * Letting that call through teaches nothing; the model retries with the same
+ * shape and eventually reports the wiki as empty. So the relative form is
+ * rewritten to the absolute one here, at the boundary, where the vault root is
+ * known.
+ *
+ * Pure, and it only ever resolves INSIDE the root: a path that escapes it is
+ * returned as-is, so `boundaryDecision` still refuses it.
+ */
+export function resolveReadPath({ path, wikiPath = '/data/wiki' }) {
+  if (typeof path !== 'string' || path.trim() === '') return null;
+  const requested = path.trim();
+  if (isAbsolute(requested)) return resolve(requested);
+  const root = resolve(wikiPath);
+  const absolute = resolve(root, requested);
+  if (absolute !== root && !absolute.startsWith(`${root}${sep}`)) return null;
+  return absolute;
 }
 
 /**

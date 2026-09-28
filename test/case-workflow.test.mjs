@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { CaseState, CaseStore } from '../plugin/case-workflow/case-store.js';
-import { AgentId, boundaryDecision, provenancePatch } from '../plugin/case-workflow/policy.js';
+import { AgentId, boundaryDecision, provenancePatch, resolveReadPath } from '../plugin/case-workflow/policy.js';
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'openplow-cases-'));
@@ -205,6 +205,33 @@ test('a relative wiki path is read against the vault, not against the working di
   const reason = boundaryDecision({ agentId: AgentId.FRONTLINE, toolName: 'read', params: { path: '/etc/passwd' } });
   assert.match(reason, /\/data\/wiki/);
   assert.match(reason, /relative/);
+});
+
+test('a relative read is rewritten to the absolute path the tool can open', () => {
+  // The read tool resolves a relative path against the agent's WORKSPACE, not
+  // the vault, so `concepts/agent-index.md` opens
+  // `/var/lib/plow/workspace/concepts/agent-index.md` and fails with ENOENT.
+  // Letting that through teaches nothing — the model retries the same shape
+  // and then reports the wiki as empty.
+  assert.equal(resolveReadPath({ path: 'concepts/agent-index.md' }), '/data/wiki/concepts/agent-index.md');
+  assert.equal(resolveReadPath({ path: './index.md' }), '/data/wiki/index.md');
+  assert.equal(resolveReadPath({ path: 'index.md' }), '/data/wiki/index.md');
+  assert.equal(resolveReadPath({ path: '_raw/OP-0001.md' }), '/data/wiki/_raw/OP-0001.md');
+
+  // Absolute in, absolute out, unchanged.
+  assert.equal(resolveReadPath({ path: '/data/wiki/concepts/latch.md' }), '/data/wiki/concepts/latch.md');
+
+  // A relative path that escapes the vault resolves to null, so it never
+  // becomes a param patch that would smuggle it past boundaryDecision.
+  for (const path of ['../../etc/passwd', 'concepts/../../var/lib/plow/cases/OP-0001.json', '../outside.md']) {
+    assert.equal(resolveReadPath({ path }), null, path);
+  }
+
+  // Nothing usable in, nothing out — the caller keeps the original params and
+  // boundaryDecision decides.
+  for (const path of [undefined, null, '', '   ', 42]) {
+    assert.equal(resolveReadPath({ path }), null, String(path));
+  }
 });
 
 test('no role can reach the session or sub-agent control surface', () => {
