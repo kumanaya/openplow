@@ -292,6 +292,47 @@ test('no role can reach the session or sub-agent control surface', () => {
   }
 });
 
+test('only the Frontline can spawn, and only its two internal roles', () => {
+  // This is how a case ever reaches the Investigator. `sessions_spawn` was in
+  // the Frontline's deny list as part of the spawn-lifecycle group, so a case
+  // was created and then sat at ESCALATED: the plugin's list won over the
+  // native config, which grants it to `main`.
+  for (const agentId of [AgentId.INVESTIGATOR, AgentId.CURATOR]) {
+    // The refusal text depends on which check fires first, and both are
+    // refusals: what matters is that the internal roles cannot spawn at all.
+    assert.match(
+      boundaryDecision({ agentId, toolName: 'sessions_spawn', params: { agentId: 'main' } }),
+      /does not create agents|Latch capabilities|curator may prepare/,
+      agentId,
+    );
+  }
+
+  // The two it is configured to work, and nothing else.
+  for (const target of [AgentId.INVESTIGATOR, AgentId.CURATOR]) {
+    assert.equal(
+      boundaryDecision({ agentId: AgentId.FRONTLINE, toolName: 'sessions_spawn', params: { agentId: target } }),
+      null,
+      target,
+    );
+  }
+  for (const target of ['main', 'ops', 'INVESTIGATOR', '', undefined]) {
+    assert.match(
+      boundaryDecision({ agentId: AgentId.FRONTLINE, toolName: 'sessions_spawn', params: { agentId: target } }),
+      /spawn only the configured investigator or curator/,
+      String(target),
+    );
+  }
+
+  // And spawning it is not a route to the rest of the lifecycle: cancelling,
+  // yielding or managing a subagent is still refused.
+  for (const toolName of ['sessions', 'sessions_yield', 'subagents']) {
+    assert.ok(
+      boundaryDecision({ agentId: AgentId.FRONTLINE, toolName, params: { agentId: AgentId.INVESTIGATOR } }),
+      `frontline must not reach ${toolName}`,
+    );
+  }
+});
+
 test('case provenance comes from the Gateway session, not model-provided identifiers', () => {
   const patch = provenancePatch({
     agentId: AgentId.FRONTLINE,

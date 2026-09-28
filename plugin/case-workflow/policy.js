@@ -19,12 +19,25 @@ const CASE_TOOLS = new Map([
   ['case_prepare_candidate', AgentId.CURATOR],
 ]);
 
-// The spawn lifecycle is one group, not one tool. OpenClaw's `messaging`
-// profile grants `sessions_spawn`, `sessions_yield` and `subagents` together,
-// so denying only the spawn still leaves a role able to list and cancel a
-// sibling's run via `subagents`, and to patch, reset, delete or reassign a
-// visible session via `sessions`. Both are denied for every role.
-const SPAWN_LIFECYCLE = ['sessions', 'sessions_spawn', 'sessions_yield', 'subagents'];
+// The spawn lifecycle is one group, not one tool. OpenClaw grants `sessions`,
+// `sessions_spawn`, `sessions_yield` and `subagents` together, so denying only
+// the spawn still leaves a role able to list and cancel a sibling's run via
+// `subagents`, and to patch, reset, delete or reassign a visible session via
+// `sessions`. Those three are denied for every role.
+//
+// `sessions_spawn` is NOT in that group for the Frontline, because spawning
+// the Investigator and the Curator is its job — it is how a case ever reaches
+// them. It was denied here anyway, and the runtime honoured this list over the
+// native config, which grants `sessions_spawn` to `main` in
+// `openclaw.patch.json5`. A case was created and then sat at ESCALATED
+// forever, because the Frontline could not spawn the role that works it.
+//
+// Removing it from the deny leaves the boundary intact: the allowlist below
+// admits exactly two static agent ids, and the other three tools of the
+// lifecycle stay denied, so the Frontline still cannot cancel, reassign or
+// inspect anyone's session.
+const SPAWN_LIFECYCLE = ['sessions', 'sessions_yield', 'subagents'];
+const SPAWN_LIFECYCLE_INTERNAL = ['sessions', 'sessions_spawn', 'sessions_yield', 'subagents'];
 
 const FRONTLINE_BLOCKED = new Set([
   'bundle-mcp', 'exec', 'process', 'browser', 'canvas', 'nodes', 'gateway',
@@ -37,7 +50,7 @@ const FRONTLINE_BLOCKED = new Set([
 const INTERNAL_BLOCKED = new Set([
   'message', 'conversations_list', 'conversations_send', 'conversations_turn', 'plow_start_thread',
   'sessions_list', 'sessions_history', 'sessions_search', 'sessions_send',
-  ...SPAWN_LIFECYCLE,
+  ...SPAWN_LIFECYCLE_INTERNAL,
 ]);
 
 const INVESTIGATOR_BLOCKED = new Set([
