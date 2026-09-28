@@ -72,6 +72,25 @@ function candidateSummary(record) {
 }
 
 
+// The audit records `tool_blocked` and stops there: no reason, no shape. So a
+// case that never opens and a read that never succeeds look identical from the
+// outside, and diagnosing either means shipping a build that guesses. This logs
+// the decision and the SHAPE of the context that produced it.
+//
+// Presence, not values. A customer id and a session key are exactly the things
+// that must not end up in a log line, and knowing that `requester` is absent
+// is as useful as knowing its contents would be.
+function logBlock(toolName, ctx, blockReason) {
+  const shape = {
+    agentId: ctx?.agentId ?? null,
+    sessionKey: typeof ctx?.sessionKey === 'string' && ctx.sessionKey !== '' ? 'present' : 'absent',
+    requester: ctx?.requester ? 'present' : 'absent',
+    requesterSenderId: typeof ctx?.requester?.senderId === 'string' && ctx.requester.senderId !== '' ? 'present' : 'absent',
+    ctxKeys: ctx && typeof ctx === 'object' ? Object.keys(ctx).sort().join(',') : typeof ctx,
+  };
+  console.log(`[case-workflow] blocked tool=${toolName} reason="${blockReason}" ctx=${JSON.stringify(shape)}`);
+}
+
 export default definePluginEntry({
   id: 'case-workflow',
   name: 'OpenPlow case workflow',
@@ -82,7 +101,10 @@ export default definePluginEntry({
       if (typeof toolName !== 'string') return;
       const params = event?.params ?? {};
       const blockReason = boundaryDecision({ agentId: ctx?.agentId, toolName, params, wikiPath: WIKI_PATH });
-      if (blockReason) return { block: true, blockReason };
+      if (blockReason) {
+        logBlock(toolName, ctx, blockReason);
+        return { block: true, blockReason };
+      }
       const patch = provenancePatch({
         agentId: ctx?.agentId,
         toolName,
@@ -90,7 +112,10 @@ export default definePluginEntry({
         sessionKey: ctx?.sessionKey,
         requester: ctx?.requester,
       });
-      if (patch?.blockReason) return { block: true, blockReason: patch.blockReason };
+      if (patch?.blockReason) {
+        logBlock(toolName, ctx, patch.blockReason);
+        return { block: true, blockReason: patch.blockReason };
+      }
       if (patch?.params) return { params: patch.params };
       // A `read` that names a real page goes through, with a relative path
       // rewritten to the absolute one the tool can actually open. A `read` that
@@ -101,7 +126,10 @@ export default definePluginEntry({
         const target = resolveReadPath({ path: params.path, wikiPath: WIKI_PATH });
         if (target) {
           const refusal = readRefusal(target);
-          if (refusal) return { block: true, blockReason: refusal };
+          if (refusal) {
+            logBlock(toolName, ctx, refusal);
+            return { block: true, blockReason: refusal };
+          }
           if (target !== params.path) return { params: { ...params, path: target } };
         }
       }
