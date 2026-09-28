@@ -234,6 +234,49 @@ test('a relative read is rewritten to the absolute path the tool can open', () =
   }
 });
 
+test('a refused read says which kind of miss it was', () => {
+  // Both are the same block with the same bound, and they need different
+  // corrections. Told "pass a path relative to that root" while reaching for
+  // its own SKILL.md, the agent retried with the same shape.
+  const own = boundaryDecision({
+    agentId: AgentId.FRONTLINE,
+    toolName: 'read',
+    params: { path: '/opt/plow/skills/knowledge-base/SKILL.md' },
+  });
+  assert.match(own, /deployment's own furniture/);
+  assert.match(own, /already in your prompt/);
+  assert.doesNotMatch(own, /Pass a path relative/);
+
+  for (const path of ['/var/lib/plow/cases/OP-0001.json', '/var/lib/plow/openclaw.json']) {
+    assert.match(
+      boundaryDecision({ agentId: AgentId.FRONTLINE, toolName: 'read', params: { path } }),
+      /deployment's own furniture/,
+      path,
+    );
+  }
+
+  // The vault root is a mount point, so it has to count as the deployment.
+  assert.match(
+    boundaryDecision({ agentId: AgentId.FRONTLINE, toolName: 'read', params: { path: '/data/other' } }),
+    /deployment's own furniture/,
+  );
+
+  // Off the machine entirely: the correction is the shape of the path.
+  const outside = boundaryDecision({
+    agentId: AgentId.FRONTLINE,
+    toolName: 'read',
+    params: { path: '/etc/passwd' },
+  });
+  assert.match(outside, /outside this agent/);
+  assert.match(outside, /Pass a path relative/);
+
+  // The Investigator gets the same distinction.
+  assert.match(
+    boundaryDecision({ agentId: AgentId.INVESTIGATOR, toolName: 'read', params: { path: '/opt/plow/skills/x/SKILL.md' } }),
+    /deployment's own furniture/,
+  );
+});
+
 test('no role can reach the session or sub-agent control surface', () => {
   // The Curator is the sharpest case: it may only stage a candidate, yet
   // `subagents` would let it list and cancel the Investigator's live run, and

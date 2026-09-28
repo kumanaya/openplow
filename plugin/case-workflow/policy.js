@@ -79,6 +79,28 @@ function blocked(name, blockedSet) {
   return blockedSet.has(name) || isMcpTool(name);
 }
 
+// The roots that belong to THIS deployment. A read inside them is a read of
+// the agent's own furniture — its skills, its prompt, its state — which is a
+// different mistake from reaching for something on the machine, and it needs a
+// different correction. One reason for both wasted calls and gave the model
+// advice that did not apply: it was told to pass "a path relative to that
+// root" while trying to read its own SKILL.md.
+const DEPLOYMENT_ROOTS = ['/opt/plow', '/var/lib/plow', '/data'];
+
+function insideDeployment(path) {
+  if (typeof path !== 'string' || path.trim() === '') return false;
+  const target = path.trim();
+  return DEPLOYMENT_ROOTS.some((root) => target === root || target.startsWith(`${root}/`));
+}
+
+function readRefusalReason(path, wikiPath, role) {
+  const base = `${role} may read canonical knowledge only, under ${wikiPath}`;
+  if (insideDeployment(path)) {
+    return `${base} — ${path} is this deployment's own furniture, not customer knowledge. Your skills and instructions are already in your prompt: use them there, not from disk.`;
+  }
+  return `${base} — ${path} is outside this agent. Pass a path relative to that root, or absolute.`;
+}
+
 /**
  * Returns a terminal block reason when a runtime tool call crosses a role
  * boundary. The Gateway owns invocation; this function is deliberately pure so
@@ -98,13 +120,13 @@ export function boundaryDecision({ agentId, toolName, params = {}, wikiPath = '/
       // on gets turned into a wrong conclusion, and this one was: "you may
       // read canonical knowledge only" reads as "the wiki has nothing", which
       // is not the same answer as "ask again with a path under the root".
-      return `frontline may read canonical knowledge only, under ${wikiPath} — pass a path relative to that root, or absolute`;
+      return readRefusalReason(params.path, wikiPath, 'frontline');
     }
   }
 
   if (agentId === AgentId.INVESTIGATOR) {
     if (INVESTIGATOR_BLOCKED.has(toolName)) return 'investigator uses approved Latch capabilities, not local writes, shells, customer messaging or customer sessions';
-    if (toolName === 'read' && !inside(params.path, wikiPath)) return `investigator may read canonical knowledge only, under ${wikiPath} — pass a path relative to that root, or absolute`;
+    if (toolName === 'read' && !inside(params.path, wikiPath)) return readRefusalReason(params.path, wikiPath, 'investigator');
     if (toolName === 'sessions_spawn') return 'investigator does not create agents or delegate cases';
   }
 
