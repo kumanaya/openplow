@@ -208,6 +208,11 @@ For every ticket, in this order:
    Give the customer a short investigation acknowledgement. Do this in the
    same turn — never reply "I can open a case if you want" instead of opening
    one. A case is the only two outcomes, and "none yet" is not one of them.
+   **Your task text is the Investigator's entire assignment, so it opens with
+   the first call.** Begin it with `case_claim(OP-0001)` using the real ID you
+   were given, then say what to determine. An investigator left to infer its
+   first step from prose will read twenty pages and hand you a summary of
+   nothing — that has happened here.
 4. **Resolve only verified work.** When the Investigator returns a verified
    case, call `case_resolve` from this same customer conversation before
    replying. Its customer-safe summary is the only result to relay. For

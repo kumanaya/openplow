@@ -1,4 +1,5 @@
-import { statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { Type } from 'typebox';
 import { definePluginEntry } from '../../plugin-sdk/plugin-entry.js';
 import { CaseStore, CaseState } from './case-store.js';
@@ -292,14 +293,39 @@ function note(sessionKey, ctx, toolName) {
   turns.set(sessionKey, turn);
 }
 
+// The open cases, read from the store this plugin owns.
+//
+// The revise instruction used to be a bare order, and the Investigator answered
+// it with a story: "the case is VERIFIED, case_claim returned a transition
+// error". It was inventing, because it had no way to know the real state and
+// order plus a gap is an invitation. The state is right here, so the
+// instruction carries it: no claim, no invention.
+const TERMINAL = new Set(['RESOLVED', 'KNOWLEDGE_CANDIDATE', 'BLOCKED', 'FAILED', 'NEEDS_HUMAN']);
+
+function openCases() {
+  let entries;
+  try {
+    entries = readdirSync(CASE_ROOT, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const open = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !/^OP-\d+\.json$/.test(entry.name)) continue;
+    try {
+      const record = JSON.parse(readFileSync(join(CASE_ROOT, entry.name), 'utf8'));
+      if (!TERMINAL.has(record.status)) open.push(`${record.id} (${record.status})`);
+    } catch {
+      // A record we cannot read is a record we do not claim knowledge about.
+    }
+  }
+  return open.sort();
+}
+
 function enforceCaseWork(ctx) {
   const sessionKey = ctx?.sessionKey;
-  if (!sessionKey) {
-    console.log(`[case-work] finalize sem sessionKey, ctx=${JSON.stringify(Object.keys(ctx || {}).sort())}`);
-    return;
-  }
+  if (!sessionKey) return;
   const agentId = agentIdFromSessionKey(sessionKey);
-  console.log(`[case-work] finalize sessionKey=${sessionKey} agent=${agentId}`);
   if (agentId !== AgentId.INVESTIGATOR && agentId !== AgentId.CURATOR) return;
 
   // Fail closed. A missing record means no case call was seen, and a security
@@ -319,11 +345,17 @@ function enforceCaseWork(ctx) {
     return;
   }
 
+  const open = openCases();
+  const truth = open.length
+    ? `The open cases are ${open.join(', ')}. None of them has an investigation or a result recorded against it.`
+    : 'There are no open cases, so there is nothing here to finish and nothing to have finished.';
+
   turn.strikes += 1;
+  const instruction = `${need.instruction} ${truth} Do not describe a tool result you have not seen — a case moves only when case_claim, case_verify or case_block has actually run, and if you have not run one, it has not moved.`;
   console.log(`[case-workflow] revise session=${sessionKey} rule="${need.id}" phrase="${need.phrase}" (turn ${turn.strikes} of ${MAX_STRIKES})`);
   return {
     action: 'revise',
-    reason: need.instruction,
-    retry: { instruction: need.instruction, idempotencyKey: 'openplow-case-work', maxAttempts: 2 },
+    reason: instruction,
+    retry: { instruction, idempotencyKey: 'openplow-case-work', maxAttempts: 2 },
   };
 }
