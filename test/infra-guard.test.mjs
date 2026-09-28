@@ -51,10 +51,45 @@ const passes = [
   // This rule used to block exactly this line, and rewrote correct answers.
   ['the receipt: a page under the vault', 'A resposta está em /data/wiki/concepts/latch.md.'],
   ['the vault root itself', 'Consulte /data/wiki/index.md para a lista de páginas.'],
-  ['the candidate inbox', 'Deixei o rascunho em /data/wiki/_raw/OP-0001.md.'],
+  ['the candidate inbox', 'Deixei o rascunho em /data/wiki/_raw/OP-nnnn.md.'],
   ['an escalation', 'I could not check the machine, so I have handed this to your owner.'],
   ['empty string', ''],
 ];
+
+// The sentences that got through. The guard's first-person test was English
+// only, and the customer was writing in Portuguese, so a rule gated on "i" and
+// "my" could not see any of this.
+const catchesPortuguese = [
+  ['self, container', 'Eu rodo dentro de um container.'],
+  ['self, kernel', 'Meu acesso foi recusado pelo kernel.'],
+  ['own EACCES', 'Recebi um EACCES no meu filesystem.'],
+  ['my filesystem', 'Meu filesystem é somente leitura para as páginas canônicas.'],
+  ['named agent, node', 'O agente roda como node.'],
+  ['we, root-owned', 'Nós rodamos com as páginas root-owned.'],
+];
+
+test('catches runtime narration in the language the customer wrote in', () => {
+  for (const [label, line] of catchesPortuguese) {
+    const hit = infraLeak(line);
+    assert.ok(hit, `should have caught: ${label}`);
+    assert.ok(hit.phrase.length > 0, `needs the exact phrase: ${label}`);
+  }
+});
+
+test('still lets a support answer cite a page that says the same words', () => {
+  // "container" is in ten pages of this wiki and "root-owned" in four. A
+  // citation that names the fact is the product working; catching it would be
+  // the same mistake as blocking the vault path, which this repo already fixed
+  // once.
+  for (const line of [
+    'A página de dados do plow-wiki explica onde o container guarda o volume.',
+    'As páginas canônicas são root-owned — está no runbook de permissões.',
+    'O runbook a-maintenance-command-fails-as-the-agent cita EACCES e o motivo.',
+    'A documentação do plow-wiki menciona Node como requisito de build.',
+  ]) {
+    assert.equal(infraLeak(line), null, line);
+  }
+});
 
 test('catches deployment identity', () => {
   for (const [label, line] of catches) {

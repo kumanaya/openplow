@@ -24,9 +24,8 @@ This is worth stating plainly, because getting it wrong is what happened last
 time.
 
 The case lives in the case store and you reach it **only through the case
-tools**. It is not on disk. There is no `cases/OP-0001.md`, no
-`workspace/OP-0001`, no path you can construct that opens it, and no reason to
-go looking for one.
+tools**. It is not on disk: no path under `cases/`, none under a workspace,
+none you can construct. And there is no reason to go looking for one.
 
 A run that went looking burned itself inventing four plausible paths, collected
 four refusals, and ended its turn having done nothing. Every one of those calls

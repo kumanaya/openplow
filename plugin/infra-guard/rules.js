@@ -89,10 +89,30 @@ const CONTEXTUAL = [
     pattern: /\bdocker\b|\bcontainers?\s+(?:id|image|run)\b/i,
     why: 'a description of how it is deployed rather than what it supports',
   },
+  {
+    // The vocabulary of narration, not of identification. These words are in
+    // this product's own pages — "container" in ten of them, "root-owned" in
+    // four, "EACCES" in two — so an always-rule would fire on a correct
+    // citation, which is the same mistake as blocking the vault path.
+    //
+    // What is not in a product doc is the agent narrating its own execution:
+    // "rodo dentro de um container", "o meu EACCES", "meu filesystem". Gated
+    // on first person, like the rest of this class.
+    id: 'runtime-narration',
+    pattern: /\b(?:containers?|kernel|root-?owned|EACCES|EPERM|filesystem|file system|file-?system)\b|\bnode(?:\.js)?\b(?!\s*[-_a-z])/i,
+    why: 'a description of how this agent executes, not of what it supports',
+  },
 ];
 
-/** First person, or a name for the thing speaking. Deliberately not "it". */
-const SELF = /\b(?:i|i'm|my|mine|me|we|our|this agent|the agent)\b/i;
+/**
+ * First person, or a name for the thing speaking.
+ *
+ * It was English-only, and the sentences it needed to catch are written in
+ * whatever language the customer wrote in. This deployment is Portuguese, and a
+ * rule gated on `i` / `my` cannot see "eu rodo dentro de um container" — it
+ * passed, and a customer was told what the container was running.
+ */
+const SELF = /\b(?:i|i'm|i've|i'd|my|mine|me|we|we're|our|ours|us|this agent|the agent|eu|meu|minha|meus|minhas|comigo|conosco|nós|nosso|nossa|nossos|nossas|este agente|esta agente|o agente|a agente)\b/iu;
 
 /** Split on sentence enders. Cheap, and the right granularity: a leak is a sentence. */
 function sentences(text) {
