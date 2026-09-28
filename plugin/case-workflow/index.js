@@ -2,7 +2,7 @@ import { statSync } from 'node:fs';
 import { Type } from 'typebox';
 import { definePluginEntry } from '../../plugin-sdk/plugin-entry.js';
 import { CaseStore, CaseState } from './case-store.js';
-import { AgentId, boundaryDecision, provenancePatch, resolveReadPath } from './policy.js';
+import { AgentId, agentIdFromSessionKey, boundaryDecision, finalizeRequirement, provenancePatch, resolveReadPath } from './policy.js';
 
 const CASE_ROOT = process.env.OPENPLOW_CASE_ROOT || '/var/lib/plow/cases';
 const WIKI_PATH = process.env.WIKI_PATH || '/data/wiki';
@@ -101,6 +101,7 @@ export default definePluginEntry({
       const toolName = event?.toolName;
       if (typeof toolName !== 'string') return;
       const params = event?.params ?? {};
+      note(ctx?.sessionKey, ctx, toolName);
       const blockReason = boundaryDecision({ agentId: ctx?.agentId, toolName, params, wikiPath: WIKI_PATH });
       if (blockReason) {
         logBlock(toolName, ctx, blockReason);
@@ -135,6 +136,11 @@ export default definePluginEntry({
         }
       }
     });
+
+    // A turn of the internal roles that finishes without touching the case store
+    // is a turn that did no work, whatever it read. This is the mechanical half
+    // of the rule the prompts keep failing to carry.
+    api.on('before_agent_finalize', (event, ctx) => enforceCaseWork(ctx));
 
     api.registerTool({
       name: 'case_create',
@@ -233,3 +239,50 @@ export default definePluginEntry({
     console.log('[case-workflow] ready: durable cases and role-bound tools registered');
   },
 });
+
+// ── case work is not optional ─────────────────────────────────────────────────
+//
+// Tracked per conversation, because that is the key the finalize hook carries.
+// Cleared when a turn passes, so a turn that did the work does not give the
+// next one a free pass; and given up on after a couple of turns that refuse, so
+// a model that never complies cannot burn two extra calls on every turn of a
+// long conversation.
+const turns = new Map();
+const MAX_SESSIONS = 256;
+const MAX_STRIKES = 2;
+
+function note(sessionKey, ctx, toolName) {
+  if (!sessionKey) return;
+  if (ctx?.agentId !== AgentId.INVESTIGATOR && ctx?.agentId !== AgentId.CURATOR) return;
+  if (turns.size >= MAX_SESSIONS) turns.clear();
+  const turn = turns.get(sessionKey) ?? { caseCalls: 0, strikes: 0 };
+  if (typeof toolName === 'string' && toolName.startsWith('case_')) turn.caseCalls += 1;
+  turns.set(sessionKey, turn);
+}
+
+function enforceCaseWork(ctx) {
+  const sessionKey = ctx?.sessionKey;
+  if (!sessionKey) return;
+  const agentId = agentIdFromSessionKey(sessionKey);
+  if (agentId !== AgentId.INVESTIGATOR && agentId !== AgentId.CURATOR) return;
+
+  const turn = turns.get(sessionKey);
+  if (!turn || turn.strikes >= MAX_STRIKES) {
+    if (turn && turn.strikes >= MAX_STRIKES) return;
+    return;
+  }
+
+  const need = finalizeRequirement({ agentId, caseToolCalls: turn.caseCalls });
+  if (!need) {
+    turn.caseCalls = 0;
+    return;
+  }
+
+  turn.strikes += 1;
+  console.log(`[case-workflow] revise session=${sessionKey} rule="${need.id}" phrase="${need.phrase}" (turn ${turn.strikes} of ${MAX_STRIKES})`);
+  return {
+    action: 'revise',
+    reason: need.instruction,
+    retry: { instruction: need.instruction, idempotencyKey: 'openplow-case-work', maxAttempts: 2 },
+  };
+}

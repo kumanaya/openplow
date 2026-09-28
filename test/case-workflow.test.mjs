@@ -4,7 +4,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { CaseState, CaseStore } from '../plugin/case-workflow/case-store.js';
-import { AgentId, boundaryDecision, provenancePatch, resolveReadPath } from '../plugin/case-workflow/policy.js';
+import {
+  AgentId,
+  agentIdFromSessionKey,
+  boundaryDecision,
+  finalizeRequirement,
+  provenancePatch,
+  resolveReadPath,
+} from '../plugin/case-workflow/policy.js';
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'openplow-cases-'));
@@ -344,4 +351,35 @@ test('case provenance comes from the Gateway session, not model-provided identif
   assert.deepEqual(patch.params.customer, 'customer-a');
   assert.deepEqual(patch.params.conversation, 'agent:main:plow:customer-a');
   assert.match(provenancePatch({ agentId: AgentId.FRONTLINE, toolName: 'case_create', params: {}, sessionKey: undefined, requester: {} }).blockReason, /authenticated sender/);
+});
+
+test('a turn that never touches the case store is sent back', () => {
+  // The Investigator read twenty-five pages, worked out exactly what the wiki
+  // did not cover, and went looking for the case on disk. The case never moved
+  // and the customer who was told an investigation had started heard nothing.
+  for (const agentId of [AgentId.INVESTIGATOR, AgentId.CURATOR]) {
+    const need = finalizeRequirement({ agentId, caseToolCalls: 0 });
+    assert.ok(need, agentId);
+    assert.ok(need.instruction.includes(agentId === AgentId.CURATOR ? 'case_prepare_candidate' : 'case_claim'), agentId);
+    // It has to name the way out, not just the way it failed.
+    assert.match(need.instruction, agentId === AgentId.CURATOR ? /no case|not resolved/ : /case_verify|case_block/);
+  }
+
+  // One case call and the turn passes, whichever one it was.
+  for (const agentId of [AgentId.INVESTIGATOR, AgentId.CURATOR]) {
+    assert.equal(finalizeRequirement({ agentId, caseToolCalls: 1 }), null, agentId);
+  }
+
+  // The Frontline is not policed this way: an honest answer from the wiki is a
+  // complete turn, and forcing a case call there would invent work.
+  assert.equal(finalizeRequirement({ agentId: AgentId.FRONTLINE, caseToolCalls: 0 }), null);
+});
+
+test('the agent is read from the session key the finalize hook carries', () => {
+  assert.equal(agentIdFromSessionKey('agent:main:main'), 'main');
+  assert.equal(agentIdFromSessionKey('agent:investigator:sub-1'), 'investigator');
+  assert.equal(agentIdFromSessionKey('agent:curator:x'), 'curator');
+  for (const key of [undefined, null, '', 'not-a-session', 'main:main']) {
+    assert.equal(agentIdFromSessionKey(key), null, String(key));
+  }
 });
