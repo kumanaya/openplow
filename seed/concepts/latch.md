@@ -40,10 +40,10 @@ Fifteen, and `TOOLS` in `packages/mcp-server/src/tools.ts` is authoritative.
 |---|---|
 | `plow_read_file` | reads a file on the Mac; non-text comes back as a resource the client saves |
 | `plow_write_file` | writes a file the owner keeps; inside `~/Plow` it approves automatically; 8 MiB cap |
-| `plow_run_command` | runs a command under a seatbelt sandbox; the only path that runs third-party code |
-| `plow_run_applescript` | drives one app by AppleScript; **the one deliberately unsandboxed path** |
+| `plow_run_command` | runs a command under a per-invocation seatbelt profile — **the only tool that gets one** |
+| `plow_run_applescript` | drives one app by AppleScript; **deliberately unsandboxed** — `osascript` is Apple's own binary and no profile would admit it |
 | `plow_get_output` | incremental output of a still-running command |
-| `plow_get_result` | polls any pending handle: pending / ready / denied / blocked / failed / expired |
+| `plow_get_result` | polls any pending handle: pending / ready / denied / blocked / failed / expired / unknown — and `unknown` is also the answer a *different* agent gets for a handle it does not own |
 | `plow_list_skills` | lists the how-to guides this Mac publishes |
 | `plow_read_skill` | reads one of them |
 | `plow_history` | what Plow has done on this Mac, from the audit log |
@@ -56,6 +56,28 @@ Fifteen, and `TOOLS` in `packages/mcp-server/src/tools.ts` is authoritative.
 
 A secret only ever reaches a page through `plow_browser`'s `fill_secret`, never
 by being read into the model's context.
+
+## What is not sandboxed
+
+The seatbelt covers **one** tool. Knowing the other three paths is the
+difference between an honest answer and a dangerous one:
+
+- **File tools** run in-process in the app — trusted code, bounds-checked
+  against the approved paths. `Write:` on a `write_file` call is genuinely
+  enforced.
+- **AppleScript** is outside the sandbox on purpose, and can never be a stored
+  rule: the same script is decided fresh every time.
+- **The browser** cannot be caged — a seatbelt has no way to say "network to
+  these origins only". Enforcement is TypeScript between the agent and
+  Playwright, plus an app-level vault.
+
+**Do not quote `DESIGN.md`'s "derived from exactly the approved capabilities".**
+That is the phrase Latch retracted: the profile is *derived from* the approved
+capabilities and is not a tight fit around them. `docs/SANDBOX-BOUNDARY.md` is
+the current statement, and it records that the approval card's own
+"(enforced)" label is wrong for a `Read:` line and for `Write:` on a command.
+The grant-by-grant account is
+[what the sandbox actually permits](/concepts/latch-sandbox-boundary.md).
 
 ## How OpenPlow uses Latch
 

@@ -6,9 +6,11 @@ category: concepts
 tags: [agent-index, reporting, hackathon]
 sources:
   - resource: https://aiworthusing.com/agent-index
+  - resource: https://aiworthusing.com/agent-index/publish
   - resource: https://github.com/plow-pbc/agent-index-client/blob/main/README.md
+  - resource: https://github.com/plow-pbc/plow-agents/blob/main/README.md
 created: 2026-09-25
-updated: 2026-09-25
+updated: 2026-09-28
 ---
 
 The public index of runnable agents at
@@ -53,6 +55,19 @@ one random install id drawn from random bytes.
 **Never bake `PLOW_AGENT_TOKEN` into an image.** It says *who* runs that
 container, and in a published image it makes every installer an installer of your
 entry. That is correct for the agent id and catastrophic for the token.
+
+## Getting on it, and getting installed
+
+Being **listed** and being **installable in one click** are two different
+things, and the second needs a Plow admin. The whole path, both routes onto
+the index and the three-step register → admit → promote gate, is in
+[how to publish your agent](/skills/how-to-publish-your-agent-on-the-agent-index.md);
+the command reference is [plow-agents](/entities/orgs/plow-agents-cli.md).
+
+The current competition built on it is
+[the AI Worth Using x OpenClaw 2.0 hackathon](/concepts/aiworthusing-hackathon.md),
+whose qualifying rules are MIT licensing, reported usage, and a public
+submission.
 
 See [the base image](/entities/orgs/plow-pbc-plow-openclaw-agent.md) and
 [the reporting client](/entities/orgs/plow-pbc-agent-index-client.md).

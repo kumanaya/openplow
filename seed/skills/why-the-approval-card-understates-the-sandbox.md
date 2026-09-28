@@ -32,6 +32,11 @@ That second one is the one to be careful about. The approved write paths bound
 where a command's *meaningful* writes land; they do not describe every byte the
 process can touch.
 
+This page is the short version a support agent needs before answering. The
+full grant-by-grant account — including the housekeeping directories, the reapable
+run exception, `ipc-sysv-sem`, and the three paths that run unsandboxed by
+design — is [what the sandbox actually permits](/concepts/latch-sandbox-boundary.md).
+
 ## Why this page exists
 
 Because a support agent should not be the thing that discovers this for a
