@@ -19,12 +19,25 @@ const CASE_TOOLS = new Map([
   ['case_prepare_candidate', AgentId.CURATOR],
 ]);
 
-// The spawn lifecycle is one group, not one tool. OpenClaw's `messaging`
-// profile grants `sessions_spawn`, `sessions_yield` and `subagents` together,
-// so denying only the spawn still leaves a role able to list and cancel a
-// sibling's run via `subagents`, and to patch, reset, delete or reassign a
-// visible session via `sessions`. Both are denied for every role.
-const SPAWN_LIFECYCLE = ['sessions', 'sessions_spawn', 'sessions_yield', 'subagents'];
+// The spawn lifecycle is one group, not one tool. OpenClaw grants `sessions`,
+// `sessions_spawn`, `sessions_yield` and `subagents` together, so denying only
+// the spawn still leaves a role able to list and cancel a sibling's run via
+// `subagents`, and to patch, reset, delete or reassign a visible session via
+// `sessions`. Those three are denied for every role.
+//
+// `sessions_spawn` is NOT in that group for the Frontline, because spawning
+// the Investigator and the Curator is its job — it is how a case ever reaches
+// them. It was denied here anyway, and the runtime honoured this list over the
+// native config, which grants `sessions_spawn` to `main` in
+// `openclaw.patch.json5`. A case was created and then sat at ESCALATED
+// forever, because the Frontline could not spawn the role that works it.
+//
+// Removing it from the deny leaves the boundary intact: the allowlist below
+// admits exactly two static agent ids, and the other three tools of the
+// lifecycle stay denied, so the Frontline still cannot cancel, reassign or
+// inspect anyone's session.
+const SPAWN_LIFECYCLE = ['sessions', 'sessions_yield', 'subagents'];
+const SPAWN_LIFECYCLE_INTERNAL = ['sessions', 'sessions_spawn', 'sessions_yield', 'subagents'];
 
 const FRONTLINE_BLOCKED = new Set([
   'bundle-mcp', 'exec', 'process', 'browser', 'canvas', 'nodes', 'gateway',
@@ -37,7 +50,7 @@ const FRONTLINE_BLOCKED = new Set([
 const INTERNAL_BLOCKED = new Set([
   'message', 'conversations_list', 'conversations_send', 'conversations_turn', 'plow_start_thread',
   'sessions_list', 'sessions_history', 'sessions_search', 'sessions_send',
-  ...SPAWN_LIFECYCLE,
+  ...SPAWN_LIFECYCLE_INTERNAL,
 ]);
 
 const INVESTIGATOR_BLOCKED = new Set([
@@ -79,6 +92,28 @@ function blocked(name, blockedSet) {
   return blockedSet.has(name) || isMcpTool(name);
 }
 
+// The roots that belong to THIS deployment. A read inside them is a read of
+// the agent's own furniture — its skills, its prompt, its state — which is a
+// different mistake from reaching for something on the machine, and it needs a
+// different correction. One reason for both wasted calls and gave the model
+// advice that did not apply: it was told to pass "a path relative to that
+// root" while trying to read its own SKILL.md.
+const DEPLOYMENT_ROOTS = ['/opt/plow', '/var/lib/plow', '/data'];
+
+function insideDeployment(path) {
+  if (typeof path !== 'string' || path.trim() === '') return false;
+  const target = path.trim();
+  return DEPLOYMENT_ROOTS.some((root) => target === root || target.startsWith(`${root}/`));
+}
+
+function readRefusalReason(path, wikiPath, role) {
+  const base = `${role} may read canonical knowledge only, under ${wikiPath}`;
+  if (insideDeployment(path)) {
+    return `${base} — ${path} is this deployment's own furniture, not customer knowledge. Your skills and instructions are already in your prompt: use them there, not from disk.`;
+  }
+  return `${base} — ${path} is outside this agent. Pass a path relative to that root, or absolute.`;
+}
+
 /**
  * Returns a terminal block reason when a runtime tool call crosses a role
  * boundary. The Gateway owns invocation; this function is deliberately pure so
@@ -98,13 +133,13 @@ export function boundaryDecision({ agentId, toolName, params = {}, wikiPath = '/
       // on gets turned into a wrong conclusion, and this one was: "you may
       // read canonical knowledge only" reads as "the wiki has nothing", which
       // is not the same answer as "ask again with a path under the root".
-      return `frontline may read canonical knowledge only, under ${wikiPath} — pass a path relative to that root, or absolute`;
+      return readRefusalReason(params.path, wikiPath, 'frontline');
     }
   }
 
   if (agentId === AgentId.INVESTIGATOR) {
     if (INVESTIGATOR_BLOCKED.has(toolName)) return 'investigator uses approved Latch capabilities, not local writes, shells, customer messaging or customer sessions';
-    if (toolName === 'read' && !inside(params.path, wikiPath)) return `investigator may read canonical knowledge only, under ${wikiPath} — pass a path relative to that root, or absolute`;
+    if (toolName === 'read' && !inside(params.path, wikiPath)) return readRefusalReason(params.path, wikiPath, 'investigator');
     if (toolName === 'sessions_spawn') return 'investigator does not create agents or delegate cases';
   }
 

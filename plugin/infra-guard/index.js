@@ -20,13 +20,22 @@
 // question answered by the operator, not by a support agent texting customers.
 // That is the one place this is deliberately stricter than the persona.
 
-import { infraLeak, messageText, revisionInstruction } from './rules.js';
+import { buildCanonicalCorpus, infraLeak, messageText, revisionInstruction } from './rules.js';
 
 // Shipped inside OpenClaw's own dist/extensions (see Dockerfile), so the SDK is
 // two levels up.
 import { definePluginEntry } from '../../plugin-sdk/plugin-entry.js';
 
 const log = (msg) => console.log(`[infra-guard] ${msg}`);
+
+// The deployment's own knowledge, read once at boot.
+//
+// Not a cache of decisions: a Set of the words this deployment has already
+// published, so a match that is a quotation is not a leak. It is what makes the
+// deterministic rules safe here — three of five of them match this product's own
+// pages, and the guard was rewriting correct answers because of it.
+const canonical = buildCanonicalCorpus(process.env.WIKI_PATH || '/data/wiki');
+log(`canonical corpus: ${canonical.pages} pages, ${canonical.text.length} chars`);
 
 export default definePluginEntry({
   id: 'infra-guard',
@@ -35,14 +44,14 @@ export default definePluginEntry({
   register(api) {
     // 1. The reply of a turn, before anyone sees it.
     api.on('before_agent_finalize', (event, ctx) => {
-      const hit = infraLeak(messageText(event?.lastAssistantMessage));
+      const hit = infraLeak(messageText(event?.lastAssistantMessage), canonical);
       if (!hit) return;
       log(`revise session=${ctx?.sessionKey} rule="${hit.id}" phrase="${hit.phrase}"`);
       const instruction = revisionInstruction(hit);
       return {
         action: 'revise',
         reason: instruction,
-        retry: { instruction, idempotencyKey: 'openplow-infra-guard', maxAttempts: 2 },
+        retry: { instruction, idempotencyKey: 'openplaw-infra-guard', maxAttempts: 2 },
       };
     });
 
@@ -57,7 +66,7 @@ export default definePluginEntry({
         text = p.message ?? p.text ?? p.body;
       }
       if (!text) return;
-      const hit = infraLeak(messageText(text));
+      const hit = infraLeak(messageText(text), canonical);
       if (!hit) return;
       log(`block tool=${name} rule="${hit.id}" phrase="${hit.phrase}"`);
       return { block: true, blockReason: `Not sent. ${revisionInstruction(hit)}` };
@@ -65,7 +74,7 @@ export default definePluginEntry({
 
     // 3. The last door.
     api.on('message_sending', (event) => {
-      const hit = infraLeak(messageText(event?.content));
+      const hit = infraLeak(messageText(event?.content), canonical);
       if (!hit) return;
       log(`cancel rule="${hit.id}" phrase="${hit.phrase}"`);
       return { cancel: true, cancelReason: `infra-guard: "${hit.phrase}" is deployment detail, not a support answer` };

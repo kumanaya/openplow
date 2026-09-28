@@ -234,6 +234,49 @@ test('a relative read is rewritten to the absolute path the tool can open', () =
   }
 });
 
+test('a refused read says which kind of miss it was', () => {
+  // Both are the same block with the same bound, and they need different
+  // corrections. Told "pass a path relative to that root" while reaching for
+  // its own SKILL.md, the agent retried with the same shape.
+  const own = boundaryDecision({
+    agentId: AgentId.FRONTLINE,
+    toolName: 'read',
+    params: { path: '/opt/plow/skills/knowledge-base/SKILL.md' },
+  });
+  assert.match(own, /deployment's own furniture/);
+  assert.match(own, /already in your prompt/);
+  assert.doesNotMatch(own, /Pass a path relative/);
+
+  for (const path of ['/var/lib/plow/cases/OP-0001.json', '/var/lib/plow/openclaw.json']) {
+    assert.match(
+      boundaryDecision({ agentId: AgentId.FRONTLINE, toolName: 'read', params: { path } }),
+      /deployment's own furniture/,
+      path,
+    );
+  }
+
+  // The vault root is a mount point, so it has to count as the deployment.
+  assert.match(
+    boundaryDecision({ agentId: AgentId.FRONTLINE, toolName: 'read', params: { path: '/data/other' } }),
+    /deployment's own furniture/,
+  );
+
+  // Off the machine entirely: the correction is the shape of the path.
+  const outside = boundaryDecision({
+    agentId: AgentId.FRONTLINE,
+    toolName: 'read',
+    params: { path: '/etc/passwd' },
+  });
+  assert.match(outside, /outside this agent/);
+  assert.match(outside, /Pass a path relative/);
+
+  // The Investigator gets the same distinction.
+  assert.match(
+    boundaryDecision({ agentId: AgentId.INVESTIGATOR, toolName: 'read', params: { path: '/opt/plow/skills/x/SKILL.md' } }),
+    /deployment's own furniture/,
+  );
+});
+
 test('no role can reach the session or sub-agent control surface', () => {
   // The Curator is the sharpest case: it may only stage a candidate, yet
   // `subagents` would let it list and cancel the Investigator's live run, and
@@ -246,6 +289,47 @@ test('no role can reach the session or sub-agent control surface', () => {
         `${agentId} must not be able to call ${toolName}`,
       );
     }
+  }
+});
+
+test('only the Frontline can spawn, and only its two internal roles', () => {
+  // This is how a case ever reaches the Investigator. `sessions_spawn` was in
+  // the Frontline's deny list as part of the spawn-lifecycle group, so a case
+  // was created and then sat at ESCALATED: the plugin's list won over the
+  // native config, which grants it to `main`.
+  for (const agentId of [AgentId.INVESTIGATOR, AgentId.CURATOR]) {
+    // The refusal text depends on which check fires first, and both are
+    // refusals: what matters is that the internal roles cannot spawn at all.
+    assert.match(
+      boundaryDecision({ agentId, toolName: 'sessions_spawn', params: { agentId: 'main' } }),
+      /does not create agents|Latch capabilities|curator may prepare/,
+      agentId,
+    );
+  }
+
+  // The two it is configured to work, and nothing else.
+  for (const target of [AgentId.INVESTIGATOR, AgentId.CURATOR]) {
+    assert.equal(
+      boundaryDecision({ agentId: AgentId.FRONTLINE, toolName: 'sessions_spawn', params: { agentId: target } }),
+      null,
+      target,
+    );
+  }
+  for (const target of ['main', 'ops', 'INVESTIGATOR', '', undefined]) {
+    assert.match(
+      boundaryDecision({ agentId: AgentId.FRONTLINE, toolName: 'sessions_spawn', params: { agentId: target } }),
+      /spawn only the configured investigator or curator/,
+      String(target),
+    );
+  }
+
+  // And spawning it is not a route to the rest of the lifecycle: cancelling,
+  // yielding or managing a subagent is still refused.
+  for (const toolName of ['sessions', 'sessions_yield', 'subagents']) {
+    assert.ok(
+      boundaryDecision({ agentId: AgentId.FRONTLINE, toolName, params: { agentId: AgentId.INVESTIGATOR } }),
+      `frontline must not reach ${toolName}`,
+    );
   }
 });
 
