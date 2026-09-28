@@ -253,6 +253,7 @@ const MAX_STRIKES = 2;
 
 function note(sessionKey, ctx, toolName) {
   if (!sessionKey) return;
+  if (process.env.CASE_WORK_DEBUG) console.log(`[case-work] tool agent=${ctx?.agentId} session=${sessionKey} tool=${toolName}`);
   if (ctx?.agentId !== AgentId.INVESTIGATOR && ctx?.agentId !== AgentId.CURATOR) return;
   if (turns.size >= MAX_SESSIONS) turns.clear();
   const turn = turns.get(sessionKey) ?? { caseCalls: 0, strikes: 0 };
@@ -270,9 +271,14 @@ function enforceCaseWork(ctx) {
   console.log(`[case-work] finalize sessionKey=${sessionKey} agent=${agentId}`);
   if (agentId !== AgentId.INVESTIGATOR && agentId !== AgentId.CURATOR) return;
 
-  const turn = turns.get(sessionKey);
-  if (!turn || turn.strikes >= MAX_STRIKES) {
-    if (turn && turn.strikes >= MAX_STRIKES) return;
+  // Fail closed. A missing record means no case call was seen, and a security
+  // rule that treats "I did not see it" as "it is fine" is the same mistake as
+  // the one this hook exists to stop. It also removes the dependency on the two
+  // hooks spelling the session the same way: if they disagree, this misses the
+  // record, enforces, and the strike cap stops it becoming a loop.
+  const turn = turns.get(sessionKey) ?? { caseCalls: 0, strikes: 0 };
+  if (turn.strikes >= MAX_STRIKES) {
+    console.log(`[case-work] giving up on session=${sessionKey} after ${turn.strikes} ignored turns`);
     return;
   }
 
