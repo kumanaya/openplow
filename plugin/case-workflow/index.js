@@ -1,7 +1,8 @@
-import { stat } from 'node:fs/promises';
+import { statSync } from 'node:fs';
 import { Type } from 'typebox';
 import { definePluginEntry } from '../../plugin-sdk/plugin-entry.js';
-import { boundaryDecision, provenancePatch, resolveReadPath } from './policy.js';
+import { CaseStore, CaseState } from './case-store.js';
+import { AgentId, boundaryDecision, provenancePatch, resolveReadPath } from './policy.js';
 
 const CASE_ROOT = process.env.OPENPLOW_CASE_ROOT || '/var/lib/plow/cases';
 const WIKI_PATH = process.env.WIKI_PATH || '/data/wiki';
@@ -19,10 +20,18 @@ const store = new CaseStore({ root: CASE_ROOT, rawRoot: `${WIKI_PATH}/_raw` });
 //
 // So the two shapes that have exactly one right answer get that answer, and a
 // miss gets the index to read instead of a dead end.
-async function readRefusal(path) {
+// SYNCHRONOUS on purpose. An `async` handler here looks equivalent and is not:
+// the plugin API does not await the hook, so every `{ block: true }` and every
+// params patch this file returns is discarded — the boundary stops firing and
+// out-of-vault reads reach the tool. Caught in a live run, where
+// `/opt/plow/wiki/wiki.toml` and `/wiki/index.md` got as far as the read tool
+// instead of being refused here.
+//
+// One `statSync` on a local volume is microseconds. A security hook that is
+// correct is worth far more than the microseconds.
+function readRefusal(path) {
   try {
-    const target = await stat(path);
-    if (target.isDirectory()) {
+    if (statSync(path).isDirectory()) {
       return `read takes a file, and ${path} is a directory. This role has no listing tool, so read ${WIKI_PATH}/index.md — it lists every canonical page with its title and tags.`;
     }
     return null;
@@ -68,7 +77,7 @@ export default definePluginEntry({
   name: 'OpenPlow case workflow',
   description: 'Durable, role-bound support cases connecting Frontline, Investigator and Curator.',
   register(api) {
-    api.on('before_tool_call', async (event, ctx) => {
+    api.on('before_tool_call', (event, ctx) => {
       const toolName = event?.toolName;
       if (typeof toolName !== 'string') return;
       const params = event?.params ?? {};
@@ -91,7 +100,7 @@ export default definePluginEntry({
       if (toolName === 'read' && (ctx?.agentId === AgentId.FRONTLINE || ctx?.agentId === AgentId.INVESTIGATOR)) {
         const target = resolveReadPath({ path: params.path, wikiPath: WIKI_PATH });
         if (target) {
-          const refusal = await readRefusal(target);
+          const refusal = readRefusal(target);
           if (refusal) return { block: true, blockReason: refusal };
           if (target !== params.path) return { params: { ...params, path: target } };
         }
