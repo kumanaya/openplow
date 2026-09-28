@@ -73,6 +73,43 @@ openplow_wiki_import() {
         "$OPENPLOW_IMAGE" /opt/plow/bin/wiki-import - "$force" $check
 }
 
+# The two compose volumes that hold container state, named by compose.yml. Both
+# survive `down -v` on purpose, which is exactly what makes them outlive the
+# container — and exactly what makes stale ownership survive an upgrade.
+OPENPLOW_STATE_VOLUME="${OPENPLOW_STATE_VOLUME:-openplow-support_state}"
+OPENPLOW_CONFIG_VOLUME="${OPENPLOW_CONFIG_VOLUME:-openplow-support_config}"
+
+# Hand a volume to the user the image runs as.
+#
+# This image used to run as root, so on any deployment created before that was
+# fixed every file in these volumes is root-owned. The boot now runs as `node`
+# and cannot read its own configuration:
+#
+#   /var/lib/plow/openclaw.json  -> the container exits 1
+#   /etc/plow/openclaw/gateway.json5 -> the boot parks and never serves
+#
+# Both read as a broken image rather than as stale ownership, which is why
+# every symptom had to be chased twice.
+#
+# A FRESH volume needs none of this — it inherits `node:node` from the image's
+# own directory, the same mechanism that makes /data safe. So this is a no-op
+# on a new install and the one-time migration on an old one, which is why it
+# is safe to run every time.
+#
+# The user is named rather than numbered so a drift from the Dockerfile's final
+# `USER` shows up in the command rather than in a silent numeric mismatch.
+openplow_ensure_volume_owner() { # <volume> <mountpoint>
+  docker run --rm --user root \
+    -v "$1:$2" \
+    --entrypoint sh "$OPENPLOW_IMAGE" -c \
+    "chown -R node:node '$2' 2>/dev/null || true"
+}
+
+openplow_ensure_state_owner() {
+  openplow_ensure_volume_owner "$OPENPLOW_STATE_VOLUME" /var/lib/plow
+  openplow_ensure_volume_owner "$OPENPLOW_CONFIG_VOLUME" /etc/plow/openclaw
+}
+
 # ── the Plow account CLI ──────────────────────────────────────────────────────
 # One place that knows how to call plow-agents, because three scripts do and
 # they must not disagree about the interpreter.

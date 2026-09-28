@@ -14,6 +14,20 @@ ORG_ROOT="/opt/plow/organization"
   echo "openplow-configure-organization: $CONFIG_PATH does not exist yet; let Plow boot once first." >&2
   exit 1
 }
+
+# An unreadable config here is almost never a broken image. It is a state
+# volume left root-owned by the release that shipped this image running as
+# root; the boot is `node` now and cannot read its own config. Say so, because
+# the alternative is an EACCES stack trace from a Node one-liner that names a
+# file and says nothing about why.
+if [ ! -r "$CONFIG_PATH" ]; then
+  echo "openplow-configure-organization: $CONFIG_PATH exists but is not readable by $(id -un)." >&2
+  echo "  That is the state volume from a deployment created while this image ran as root." >&2
+  echo "  Fix it once, from the host:" >&2
+  echo "    docker run --rm --user root -v openplow-support_state:/var/lib/plow \\" >&2
+  echo "      --entrypoint sh $(basename "$0") -c 'chown -R node:node /var/lib/plow'" >&2
+  exit 1
+fi
 node "$ORG_ROOT/materialize-main-binding.mjs" "$CONFIG_PATH"
 
 
