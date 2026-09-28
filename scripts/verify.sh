@@ -207,6 +207,28 @@ if [[ -d "$ROOT/plugin/infra-guard" ]]; then
   else
     fail "the Gateway does not discover infra-guard" "check the COPY path and the manifest's enabledByDefault"
   fi
+
+  # DISCOVERY IS NOT LOADING. `plugins list` above reads the directory, so a
+  # plugin with a syntax error, a missing import or a bad reference is still
+  # listed and still passes it. That is not theoretical: three deployments in a
+  # row shipped a `case-workflow` that the boot logged as
+  #
+  #   [plugins] case-workflow failed during load … ReferenceError
+  #   [plugins] case-workflow failed during load … SyntaxError
+  #
+  # while every check in this file passed. The whole role boundary — the
+  # policy hook, the provenance injection, all six case tools — was simply
+  # absent, and only a live conversation noticed. So the module is imported for
+  # real, offline, which is the thing that has to work.
+  for plugin in case-workflow infra-guard; do
+    if docker run --rm --network none --entrypoint node "$IMG" --input-type=module \
+        -e "await import('/app/dist/extensions/$plugin/index.js')" >/dev/null 2>&1; then
+      pass "$plugin actually loads, not just resolves to a path"
+    else
+      fail "$plugin is discoverable but does not load" \
+        "node --input-type=module -e \"await import('/app/dist/extensions/$plugin/index.js')\" inside the image; the boot log line '[$plugin] failed during load' names the error"
+    fi
+  done
   if command -v node >/dev/null 2>&1; then
     if (cd "$ROOT" && node --test test/ >/dev/null 2>&1); then
       pass "guard and durable-case tests pass"
