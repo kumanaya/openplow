@@ -102,6 +102,13 @@ export default definePluginEntry({
       if (typeof toolName !== 'string') return;
       const params = event?.params ?? {};
       note(ctx?.sessionKey, ctx, toolName);
+      if (!firstToolIsCaseTool(ctx, toolName)) {
+        const first = ctx?.agentId === AgentId.CURATOR ? 'case_prepare_candidate(caseId)' : 'case_claim(caseId)';
+        const blockReason =
+          `call ${first} before anything else. You cannot investigate a case you have not claimed, and you cannot finish a turn that has not recorded a result: read, verify or block, and say it with the tool. If you cannot proceed, ${ctx?.agentId === AgentId.CURATOR ? 'say so and stop' : 'case_block with the precise reason'}.`;
+        logBlock(toolName, ctx, blockReason);
+        return { block: true, blockReason };
+      }
       const blockReason = boundaryDecision({ agentId: ctx?.agentId, toolName, params, wikiPath: WIKI_PATH });
       if (blockReason) {
         logBlock(toolName, ctx, blockReason);
@@ -251,9 +258,33 @@ const turns = new Map();
 const MAX_SESSIONS = 256;
 const MAX_STRIKES = 2;
 
+// Per run, not per conversation. The finalize hook told the Investigator it had
+// not touched the case, twice, and it answered both times with a story about
+// having claimed and verified it. A finalisation instruction loses to a
+// confident narrator. The tool door does not: the first thing this role is
+// allowed to do is the call, so there is no room to read first and narrate
+// afterwards.
+const runs = new Map();
+const MAX_RUNS = 512;
+
+function firstToolIsCaseTool(ctx, toolName) {
+  const runId = ctx?.runId;
+  if (!runId) return true; // no run to track: do not invent a rule we cannot keep
+  const agentId = ctx?.agentId;
+  if (agentId !== AgentId.INVESTIGATOR && agentId !== AgentId.CURATOR) return true;
+  const isCaseTool = typeof toolName === 'string' && toolName.startsWith('case_');
+  if (isCaseTool) {
+    runs.delete(runId);
+    return true;
+  }
+  if (runs.has(runId)) return false;
+  if (runs.size >= MAX_RUNS) runs.clear();
+  runs.set(runId, true);
+  return false;
+}
+
 function note(sessionKey, ctx, toolName) {
   if (!sessionKey) return;
-  if (process.env.CASE_WORK_DEBUG) console.log(`[case-work] tool agent=${ctx?.agentId} session=${sessionKey} tool=${toolName}`);
   if (ctx?.agentId !== AgentId.INVESTIGATOR && ctx?.agentId !== AgentId.CURATOR) return;
   if (turns.size >= MAX_SESSIONS) turns.clear();
   const turn = turns.get(sessionKey) ?? { caseCalls: 0, strikes: 0 };
