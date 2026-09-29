@@ -1,0 +1,87 @@
+name: ci
+
+# The three deploys that shipped broken all passed locally: nothing loaded the
+# plugin, nothing parsed the shell scripts, and nothing checked that the
+# manifests and the registrations agreed. These steps are the floor, and each
+# one has been run against this tree before being added here.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: syntax and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # `node --check` parses without resolving imports, so it passes on a
+      # plugin whose SDK is missing. That is deliberate: this is a syntax
+      # floor, and the manifest test is what covers loadability.
+      - name: parse the plugin entry points
+        run: |
+          for f in plugin/case-workflow/index.js plugin/infra-guard/index.js; do
+            node --check "$f"
+          done
+
+      - name: parse the helper modules
+        run: |
+          for f in scripts/*.mjs; do
+            node --check "$f"
+          done
+
+      # bin/* are POSIX sh with no extension, so a `*.sh` glob never sees them.
+      # Each script is parsed with the interpreter its own shebang declares,
+      # because that is the one that will run it. `announce-line.sh` uses
+      # process substitution and declares bash, so checking it with dash
+      # reports a syntax error that does not exist; the reverse mistake is
+      # worse, because a real sh bug in bin/ would slip through a check that
+      # assumes bash everywhere.
+      - name: parse the shell scripts with the interpreter they declare
+        run: |
+          shopt -s nullglob
+          for f in scripts/*.sh bin/*; do
+            case "$(head -1 "$f")" in
+              *bash*) bash -n "$f" ;;
+              *)      sh   -n "$f" ;;
+            esac
+          done
+
+      # The patch is JSON5, which JSON.parse rejects on the unquoted keys, so
+      # this needs the real parser. Installed ephemerally: the repo has no
+      # package.json, and adding one for a linter would be a larger change
+      # than the check is worth.
+      - name: the organization patch parses as JSON5
+        run: |
+          npm install --no-save --silent json5
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const json5 = (await import("json5")).default;
+            const patch = json5.parse(
+              readFileSync("organization/openclaw.patch.json5", "utf8"),
+            );
+            const main = patch.agents.entries.main.tools;
+            if (!Array.isArray(main.alsoAllow) || main.alsoAllow.length === 0) {
+              throw new Error("main declares no alsoAllow");
+            }
+            console.log("main.alsoAllow =", main.alsoAllow.join(", "));
+          '
+
+      # An explicit glob, not a bare directory. Node 22 resolves `test/` as a
+      # module path and fails with "Cannot find module .../test"; the local
+      # Node 24 accepts it. The shell expands the glob before node sees it, so
+      # this behaves the same on both.
+      - name: unit tests
+        run: node --test test/*.test.mjs
