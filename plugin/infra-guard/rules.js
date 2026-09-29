@@ -43,7 +43,14 @@ const ALWAYS = [
   },
   {
     id: 'model-id',
-    pattern: /\b(?:plow\/[\w.-]+\/[\w.-]+|(?:z-ai|openai|anthropic|google)\/[\w.-]+|(?:glm|gpt|claude|llama|mistral|qwen|deepseek|o\d)-[\w.]+)/i,
+    // The lookbehind is not decoration. `plow/vendor/model` is a bare token in
+    // prose, and it is a PATH SEGMENT in `/opt/plow/bin/wiki-bootstrap`, which
+    // is how a maintenance command names the tool it runs. Measured: the rule
+    // fired on the seeded line `docker compose run … /opt/plow/bin/…` and
+    // reported a file path as a model identifier. That is the same class of
+    // mistake the corpus exception exists to absorb, and absorbing it here
+    // meant a published path silently disarming a rule about the model.
+    pattern: /(?<!\/)\b(?:plow\/[\w.-]+\/[\w.-]+|(?:z-ai|openai|anthropic|google)\/[\w.-]+|(?:glm|gpt|claude|llama|mistral|qwen|deepseek|o\d)-[\w.]+)/i,
     why: 'the underlying model identifier',
   },
   {
@@ -58,6 +65,24 @@ const ALWAYS = [
     // because a command is operator-speak whoever says it and a first-person
     // reference would let "you run: docker compose run" through. A customer
     // of a support line cannot run any of it.
+    //
+    // `publishable: false`, because the corpus exception is the wrong tool for
+    // this one rule. That exception answers "is this a secret?", and for a
+    // path or a model id the answer is a legitimate yes: the owner published
+    // it, so it is not one. This rule never asks that question. It asks
+    // whether a command belongs in a support reply, and a command the owner
+    // runs on their own machine does not, however many pages have it written
+    // down. prompt/AGENTS.md already says so: handing the reader a command is
+    // "an operator talking, and a customer cannot run it".
+    //
+    // The vault made it concrete. `concepts/where-data-lives.md` documents
+    // `docker compose down -v` on the page explaining that it deletes every
+    // named volume this deployment declares, and
+    // `skills/a-maintenance-command-fails-as-the-agent.md` carries
+    // `docker compose run --rm --user root agent`. With the exception applied,
+    // both passed the guard — the page documenting the destructive command was
+    // exactly what licensed waving the destructive command through.
+    publishable: false,
     id: 'operator-command',
     pattern: /\bdocker(?:\s+-?compose)?\s+(?:run|exec|build|up|down|logs)\b|--user\s+root\b|\bsudo\s+\w+|\bgit\s+(?:push|commit)\b/,
     why: "a command for the reader to run, which is the owner's job, not a support answer",
@@ -73,7 +98,7 @@ const ALWAYS = [
  * every time: `/data/wiki` is the receipt, `/var/lib/plow` is in
  * `concepts/where-data-lives.md`, and "Python 3.11" is a product requirement.
  */
-export const ALWAYS_PROBE = ALWAYS.map(({ id, pattern }) => ({ id, pattern }));
+export const ALWAYS_PROBE = ALWAYS.map((rule) => ({ id: rule.id, pattern: rule.pattern, publishable: rule.publishable !== false }));
 
 
 /**
@@ -83,8 +108,11 @@ export const ALWAYS_PROBE = ALWAYS.map(({ id, pattern }) => ({ id, pattern }));
  * matches, and that premise was assumed three times here and wrong every time:
  * `/data/wiki` is the receipt, `/var/lib/plow` is in
  * `concepts/where-data-lives.md`, `docker compose down` is in the same page, and
- * "Python 3.11" is a product requirement. Measured, three of five rules matched
- * the product's own documentation and were rewriting correct answers.
+ * "Python 3.11" is a product requirement. Measured against this vault,
+ * `deployment-path` matches `/var/lib/plow` and `/opt/plow`, and
+ * `operator-command` matches `docker compose down`, `docker compose run`,
+ * `docker compose up`, `docker compose exec` and `git push`. The first yields
+ * to a quotation. The second does not, for the reason on the rule.
  *
  * So the guard stops guessing whether a match is a leak or a citation and
  * checks: if the phrase appears in the canonical corpus, the agent is quoting
@@ -92,9 +120,10 @@ export const ALWAYS_PROBE = ALWAYS.map(({ id, pattern }) => ({ id, pattern }));
  * It is also the check that needs no model and no language: the vault is
  * mounted, and the text is the text.
  *
- * The corollary is a real limit, and it is the right one: something the owner
- * has written into the wiki is not a secret any more. That is the owner's
- * call to make, not the guard's.
+ * The corollary is a real limit: something the owner has written into the
+ * wiki is not a secret any more. That is the owner's call to make, not the
+ * guard's — and it holds only for the rules that opt into it, because a rule
+ * marked `publishable: false` is not asking what is secret.
  */
 export function buildCanonicalCorpus(wikiPath) {
   const text_out = [];
@@ -161,12 +190,22 @@ function sentences(text) {
   return text.split(/(?<=[.!?])\s+|\n+/).filter(Boolean);
 }
 
-function firstHit(text, rules) {
+/**
+ * Every rule that fires on this text, in rule order, not only the first.
+ *
+ * One rule at a time is how a silenced hit used to hide an enforced one: "the
+ * state lives in /var/lib/plow. Run `docker compose down -v`." matched the
+ * deployment path first, the vault publishes that path, the exception
+ * swallowed the hit, and the command left with it. A rule the vault cannot
+ * silence has to be able to speak for the whole message.
+ */
+function allHits(text, rules) {
+  const found = [];
   for (const rule of rules) {
     const m = rule.pattern.exec(text);
-    if (m) return { id: rule.id, phrase: m[0].trim(), why: rule.why };
+    if (m) found.push({ id: rule.id, phrase: m[0].trim(), why: rule.why, publishable: rule.publishable !== false });
   }
-  return null;
+  return found;
 }
 
 /**
@@ -177,16 +216,23 @@ function firstHit(text, rules) {
  * model id, a local port, a command for the reader to run. A hit is final and
  * nothing can overturn it, which is what makes it safe to keep synchronous.
  *
+ * A publishable rule yields to a quotation: if the owner published the
+ * phrase, the model is quoting knowledge this deployment chose to publish,
+ * and that is not a disclosure. A rule that opts out does not yield.
+ *
  * @returns {{id: string, phrase: string, why: string} | null}
  */
 export function infraLeak(text, corpus) {
   if (typeof text !== 'string' || text.length === 0) return null;
-  const hit = firstHit(text, ALWAYS);
-  if (!hit) return null;
-  // Quoting the knowledge base is the product working. If the owner has
-  // published the phrase, it is not a secret and the model is not leaking it.
-  if (corpus && isPublished(corpus, hit.phrase)) return null;
-  return hit;
+  const found = allHits(text, ALWAYS);
+  if (found.length === 0) return null;
+  const enforced = found.find((hit) => !hit.publishable);
+  if (enforced) return enforced;
+  for (const hit of found) {
+    if (corpus && isPublished(corpus, hit.phrase)) continue;
+    return hit;
+  }
+  return null;
 }
 
 /**
