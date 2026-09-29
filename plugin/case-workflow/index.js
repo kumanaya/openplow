@@ -286,7 +286,9 @@ function firstToolIsCaseTool(ctx, toolName) {
 
 function note(sessionKey, ctx, toolName) {
   if (!sessionKey) return;
-  if (ctx?.agentId !== AgentId.INVESTIGATOR && ctx?.agentId !== AgentId.CURATOR) return;
+  // The Frontline is in this list because a real `case_resolve` has to clear its
+  // own requirement, or it is revised on every turn of a closed case forever.
+  if (![AgentId.FRONTLINE, AgentId.INVESTIGATOR, AgentId.CURATOR].includes(ctx?.agentId)) return;
   if (turns.size >= MAX_SESSIONS) turns.clear();
   const turn = turns.get(sessionKey) ?? { caseCalls: 0, strikes: 0 };
   if (typeof toolName === 'string' && toolName.startsWith('case_')) turn.caseCalls += 1;
@@ -331,7 +333,14 @@ function enforceCaseWork(ctx) {
   const sessionKey = ctx?.sessionKey;
   if (!sessionKey) return;
   const agentId = agentIdFromSessionKey(sessionKey);
-  if (agentId !== AgentId.INVESTIGATOR && agentId !== AgentId.CURATOR) return;
+  if (agentId !== AgentId.FRONTLINE && agentId !== AgentId.INVESTIGATOR && agentId !== AgentId.CURATOR) return;
+
+  // Read the store before anything else, so the check below has the state in
+  // scope. It used to be read further down, behind the role guard above, which
+  // made the Frontline branch below unreachable and its variable out of scope at
+  // the same time — dead code that every unit test passed, because the test
+  // called the pure function and not the wiring that never called it.
+  const { labels: open, verifiedConversations } = openCases();
 
   // Fail closed. A missing record means no case call was seen, and a security
   // rule that treats "I did not see it" as "it is fine" is the same mistake as
@@ -359,7 +368,6 @@ function enforceCaseWork(ctx) {
     return;
   }
 
-  const { labels: open, verifiedConversations } = openCases();
   const truth = open.length
     ? `The open cases are ${open.join(', ')}. None of them has an investigation or a result recorded against it.`
     : 'There are no open cases, so there is nothing here to finish and nothing to have finished.';
