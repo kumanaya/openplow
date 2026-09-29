@@ -43,12 +43,20 @@ jobs:
           done
 
       # bin/* are POSIX sh with no extension, so a `*.sh` glob never sees them.
-      # `sh -n` is dash, the same parser the base image uses, not bash.
-      - name: parse the shell scripts
+      # Each script is parsed with the interpreter its own shebang declares,
+      # because that is the one that will run it. `announce-line.sh` uses
+      # process substitution and declares bash, so checking it with dash
+      # reports a syntax error that does not exist; the reverse mistake is
+      # worse, because a real sh bug in bin/ would slip through a check that
+      # assumes bash everywhere.
+      - name: parse the shell scripts with the interpreter they declare
         run: |
           shopt -s nullglob
           for f in scripts/*.sh bin/*; do
-            sh -n "$f"
+            case "$(head -1 "$f")" in
+              *bash*) bash -n "$f" ;;
+              *)      sh   -n "$f" ;;
+            esac
           done
 
       # The patch is JSON5, which JSON.parse rejects on the unquoted keys, so
