@@ -79,5 +79,9 @@ jobs:
             console.log("main.alsoAllow =", main.alsoAllow.join(", "));
           '
 
+      # An explicit glob, not a bare directory. Node 22 resolves `test/` as a
+      # module path and fails with "Cannot find module .../test"; the local
+      # Node 24 accepts it. The shell expands the glob before node sees it, so
+      # this behaves the same on both.
       - name: unit tests
-        run: node --test test/
+        run: node --test test/*.test.mjs
