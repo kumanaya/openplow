@@ -256,6 +256,56 @@ export function evictOldest(map, keepKey) {
   }
 }
 
+// Per run, not per conversation. The finalize hook told the Investigator it had
+// not touched the case, twice, and it answered both times with a story about
+// having claimed and verified it. A finalisation instruction loses to a
+// confident narrator. The tool door does not: the first thing this role is
+// allowed to do is the call, so there is no room to read first and narrate
+// afterwards.
+const RUNS = new Map();
+const MAX_RUNS = 512;
+const PENDING = 'pending';
+const SATISFIED = 'satisfied';
+
+/**
+ * Block the Investigator and the Curator from touching anything but the case
+ * store until they have called it.
+ *
+ * The rule is "the case call comes first", not "one non-case call per case
+ * call". It used to be the second, because the flag was cleared by the case
+ * call: the next read after `case_claim` looked like a first read again, was
+ * refused, and re-armed the guard, so every later read in the same run was
+ * refused too. An Investigator then got exactly one page per claim, found
+ * every read after it denied, and reported the read tool as broken — which is
+ * what a real deployment did, with the resulting BLOCKED case carrying a
+ * confident, wrong reason.
+ *
+ * A run that has made its case call stays satisfied for the rest of that run.
+ * The refusal is still there for the case it was written for: a role that
+ * reaches for `read` before claiming gets one refusal naming the call, and a
+ * second attempt in the same run is refused without spending more.
+ *
+ * `runs` is injectable so the rule can be exercised without module state.
+ */
+export function firstToolIsCaseTool(ctx, toolName, runs = RUNS) {
+  const runId = ctx?.runId;
+  if (!runId) return true; // no run to track: do not invent a rule we cannot keep
+  const agentId = ctx?.agentId;
+  if (agentId !== AgentId.INVESTIGATOR && agentId !== AgentId.CURATOR) return true;
+
+  const isCaseTool = typeof toolName === 'string' && toolName.startsWith('case_');
+  if (isCaseTool) {
+    runs.set(runId, SATISFIED);
+    return true;
+  }
+
+  if (runs.get(runId) === SATISFIED) return true;
+  if (runs.has(runId)) return false; // already refused once in this run
+  if (runs.size >= MAX_RUNS) evictOldest(runs, runId);
+  runs.set(runId, PENDING);
+  return false;
+}
+
 /** `agent:<id>:<rest>` -> `<id>`. The finalize hook carries a session key, not an agent. */
 export function agentIdFromSessionKey(sessionKey) {
   if (typeof sessionKey !== 'string') return null;

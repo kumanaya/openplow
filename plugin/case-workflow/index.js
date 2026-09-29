@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { Type } from 'typebox';
 import { definePluginEntry } from '../../plugin-sdk/plugin-entry.js';
 import { CaseStore, CaseState } from './case-store.js';
-import { AgentId, agentIdFromSessionKey, boundaryDecision, evictOldest, finalizeRequirement, provenancePatch, requiresResolution, resolveReadPath } from './policy.js';
+import { AgentId, agentIdFromSessionKey, boundaryDecision, evictOldest, finalizeRequirement, firstToolIsCaseTool, provenancePatch, requiresResolution, resolveReadPath } from './policy.js';
 
 const CASE_ROOT = process.env.OPENPLOW_CASE_ROOT || '/var/lib/plow/cases';
 const WIKI_PATH = process.env.WIKI_PATH || '/data/wiki';
@@ -259,30 +259,6 @@ const turns = new Map();
 const MAX_SESSIONS = 256;
 const MAX_STRIKES = 2;
 
-// Per run, not per conversation. The finalize hook told the Investigator it had
-// not touched the case, twice, and it answered both times with a story about
-// having claimed and verified it. A finalisation instruction loses to a
-// confident narrator. The tool door does not: the first thing this role is
-// allowed to do is the call, so there is no room to read first and narrate
-// afterwards.
-const runs = new Map();
-const MAX_RUNS = 512;
-
-function firstToolIsCaseTool(ctx, toolName) {
-  const runId = ctx?.runId;
-  if (!runId) return true; // no run to track: do not invent a rule we cannot keep
-  const agentId = ctx?.agentId;
-  if (agentId !== AgentId.INVESTIGATOR && agentId !== AgentId.CURATOR) return true;
-  const isCaseTool = typeof toolName === 'string' && toolName.startsWith('case_');
-  if (isCaseTool) {
-    runs.delete(runId);
-    return true;
-  }
-  if (runs.has(runId)) return false;
-  if (runs.size >= MAX_RUNS) evictOldest(runs, runId);
-  runs.set(runId, true);
-  return false;
-}
 
 function note(sessionKey, ctx, toolName) {
   if (!sessionKey) return;
