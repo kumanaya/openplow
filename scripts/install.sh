@@ -228,12 +228,25 @@ ok "container started"
 openplow_ensure_state_owner || die "could not hand the state volume to the image's user"
 ok "state volume owned by $(docker run --rm --entrypoint id "$OPENPLOW_IMAGE" -un 2>/dev/null || echo node)"
 step "Configure the support organization"
-for attempt in {1..30}; do
+# The base renders /var/lib/plow/openclaw.json on boot and the configurator
+# edits that file, so this wait is a real dependency, not a formality. A cold
+# first boot also resolves the model provider, which is why being "up" is not
+# the same as having rendered: 30 seconds lost the race on a first install and
+# the failure that came out was the configurator's "does not exist yet; let
+# Plow boot once first", which reads like a broken image rather than a script
+# that gave up early.
+configured=0
+for attempt in {1..180}; do
   if docker compose -f "$ROOT/compose.yml" exec -T agent test -f /var/lib/plow/openclaw.json; then
+    configured=1
     break
   fi
   sleep 1
 done
+[[ "$configured" -eq 1 ]] || die "the agent did not render /var/lib/plow/openclaw.json within 180s.
+  That file is the base's own configuration and it is written during boot, so
+  this is a boot that did not finish, not a missing install step.
+  Look at:  docker compose logs agent | tail -50"
 docker compose -f "$ROOT/compose.yml" exec -T agent /opt/plow/bin/openplow-configure-organization \
   || die "could not configure the Frontline, Investigator and Curator roster"
 docker compose -f "$ROOT/compose.yml" restart agent \
