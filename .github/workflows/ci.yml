@@ -48,13 +48,17 @@ jobs:
       # process substitution and declares bash, so checking it with dash
       # reports a syntax error that does not exist; the reverse mistake is
       # worse, because a real sh bug in bin/ would slip through a check that
-      # assumes bash everywhere.
+      # assumes bash everywhere. The same rule covers a bin/ entry point that
+      # declares node: `openplow-cases.mjs` is read by `sh -n` as a shell
+      # function call and fails on the first `(`, which is a red CI for a file
+      # that is perfectly valid JavaScript.
       - name: parse the shell scripts with the interpreter they declare
         run: |
           shopt -s nullglob
           for f in scripts/*.sh bin/*; do
             case "$(head -1 "$f")" in
               *bash*) bash -n "$f" ;;
+              *node*) node --check "$f" ;;
               *)      sh   -n "$f" ;;
             esac
           done
