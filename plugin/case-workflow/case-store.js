@@ -1,3 +1,4 @@
+import { readFileSync, readdirSync } from 'node:fs';
 import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -14,6 +15,19 @@ export const CaseState = Object.freeze({
   BLOCKED: 'BLOCKED',
   FAILED: 'FAILED',
 });
+
+/**
+ * The states no case leaves. The store decides what is open and the finalize
+ * hook asks, so the list is written down once here rather than kept beside the
+ * caller that used to hold its own copy of it.
+ */
+export const TERMINAL_STATES = Object.freeze([
+  CaseState.RESOLVED,
+  CaseState.KNOWLEDGE_CANDIDATE,
+  CaseState.BLOCKED,
+  CaseState.FAILED,
+  CaseState.NEEDS_HUMAN,
+]);
 
 const CASE_ID = /^OP-\d{4,}$/;
 const SUSPICIOUS_CONTENT = /-----BEGIN|\b(?:password|passphrase|api[_ -]?key|access[_ -]?token|secret)\b|\bbearer\s+[a-z0-9._-]+/i;
@@ -89,6 +103,8 @@ ${relevantPages.length > 0 ? `- Relevant canonical pages:\n${list(relevantPages)
 
 export class CaseStore {
   #locks = new Map();
+  #index = new Map();
+  #indexed = false;
 
   constructor({ root, rawRoot, clock = () => new Date() }) {
     this.root = root;
@@ -135,6 +151,7 @@ export class CaseStore {
       };
       await this.#atomicWrite(sequencePath, `${number}\n`);
       await this.#atomicWrite(this.#casePath(caseId), `${JSON.stringify(record, null, 2)}\n`);
+      this.#track(record);
       await this.#appendEvents(caseId, [
         { at: createdAt, actor: 'frontline', from: null, to: CaseState.NEW, reason: 'case created' },
         { at: createdAt, actor: 'frontline', from: CaseState.NEW, to: CaseState.KNOWLEDGE_CHECKED, reason: 'canonical wiki did not resolve the case' },
@@ -201,6 +218,7 @@ export class CaseStore {
       record.candidate = { path: candidatePath, createdAt };
       record.updatedAt = createdAt;
       await this.#atomicWrite(this.#casePath(caseId), `${JSON.stringify(record, null, 2)}\n`);
+      this.#track(record);
       await this.#appendEvents(caseId, [{
         at: createdAt,
         actor: 'curator',
@@ -222,6 +240,63 @@ export class CaseStore {
     return content.split('\n').filter(Boolean).map((line) => JSON.parse(line));
   }
 
+  /**
+   * Every case this store knows about, carrying only what the finalize hook
+   * needs to decide: where it is, and which conversation is waiting on it.
+   *
+   * SYNC, and never async. The plugin API does not await the finalize hook, so
+   * an `async` index is an index that does not exist — and a missing one fails
+   * OPEN, because the hook would read no open cases and stop revising a model
+   * that has done no work. It also runs on the finalize of every turn of all
+   * three roles, and reading the directory meant opening and parsing every
+   * record on every one of those turns, none of which differs from the last.
+   *
+   * So the index is built once, on the first read, and after that it is
+   * maintained by the same writes that maintain the records. A record edited
+   * underneath the store is outside the threat model: SECURITY.md puts the
+   * state volume and this code inside the trusted boundary, and the only
+   * writer of a case is this class.
+   */
+  openSnapshot() {
+    this.#buildIndex();
+    const labels = [];
+    const verifiedConversations = [];
+    for (const [id, entry] of this.#index) {
+      if (TERMINAL_STATES.includes(entry.status)) continue;
+      labels.push(`${id} (${entry.status})`);
+      if (entry.status === CaseState.VERIFIED && typeof entry.conversation === 'string') {
+        verifiedConversations.push(entry.conversation);
+      }
+    }
+    return { labels: labels.sort(), verifiedConversations };
+  }
+
+  #buildIndex() {
+    if (this.#indexed) return;
+    // Set before the walk, not after: a store whose directory does not exist
+    // yet is empty, not broken, and its first case is tracked by `create`.
+    this.#indexed = true;
+    let entries;
+    try {
+      entries = readdirSync(this.root, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (!entry.isFile() || !/^OP-\d+\.json$/.test(entry.name)) continue;
+      try {
+        this.#track(JSON.parse(readFileSync(join(this.root, entry.name), 'utf8')));
+      } catch {
+        // A record we cannot read is a record we do not claim knowledge about.
+      }
+    }
+  }
+
+  #track(record) {
+    if (!record?.id || typeof record.status !== 'string') return;
+    this.#index.set(record.id, { status: record.status, conversation: record.conversation });
+  }
+
   async #transition(caseId, allowedStates, nextState, actor, reason, mutate) {
     return this.#withCaseLock(caseId, async () => {
       const record = await this.#readCase(caseId);
@@ -232,6 +307,7 @@ export class CaseStore {
       record.status = nextState;
       record.updatedAt = at;
       await this.#atomicWrite(this.#casePath(caseId), `${JSON.stringify(record, null, 2)}\n`);
+      this.#track(record);
       await this.#appendEvents(caseId, [{ at, actor, from, to: nextState, reason }]);
       return record;
     });

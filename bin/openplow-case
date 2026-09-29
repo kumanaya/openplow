@@ -1,0 +1,16 @@
+#!/bin/sh
+# What a support case is right now. The companion to wiki-peek, which answers
+# the same question about the vault.
+#
+#   openplow-case            every case, one line each
+#   openplow-case OP-0001    one case in full, with its event log
+#
+# Read-only. It opens records and writes nothing, starts nothing and talks to
+# nothing, so it is safe to run at any time, including while the agent is
+# answering tickets. A case moves only through case_claim, case_verify,
+# case_block, case_resolve and case_prepare_candidate, and only for the role
+# that owns it; this reports what the store already holds.
+set -eu
+
+DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+exec node "$DIR/openplow-cases.mjs" "$@"

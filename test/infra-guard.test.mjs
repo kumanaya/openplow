@@ -69,10 +69,11 @@ const passes = [
 ];
 
 // The guard's central problem, measured rather than assumed: a deterministic
-// rule is only safe when no canonical page contains what it matches, and three
-// of five did — `/var/lib/plow` in where-data-lives.md, `docker compose down`
-// in the same page, `git push` in latch-approval-model.md. The guard was
-// rewriting correct answers. The corpus is the answer.
+// rule is only safe when no canonical page contains what it matches, and the
+// vault did — `/var/lib/plow` in where-data-lives.md, `docker compose down`
+// and `docker compose down -v` in the same page, `git push` in
+// latch-approval-model.md. The guard was rewriting correct answers, and the
+// corpus is the answer — for a rule that is asking what is secret.
 const corpus = buildCanonicalCorpus(SEED);
 
 test('a phrase this deployment publishes is a citation, not a leak', () => {
@@ -81,20 +82,44 @@ test('a phrase this deployment publishes is a citation, not a leak', () => {
 
   for (const line of [
     'O estado de sessao fica no container, em /var/lib/plow.',
-    'Para promover um candidato, use docker compose run --rm --user root agent.',
     'A pagina where-data-lives.md diz que o que sobrevive a um redeploy e o volume.',
   ]) {
     assert.equal(infraLeak(line, corpus), null, line);
   }
 });
 
+test('a published command is still a command', () => {
+  // The vault carries all three of these. where-data-lives.md documents
+  // `docker compose down -v` on the page explaining that it deletes every
+  // named volume the deployment declares, and
+  // a-maintenance-command-fails-as-the-agent.md carries the root-privileged
+  // run. A support line hands the reader none of them, and the first one takes
+  // the knowledge base with it.
+  for (const line of [
+    'Para promover um candidato, use docker compose run --rm --user root agent.',
+    'Rode docker compose down -v para liberar espaco.',
+    'Depois disso e so um git push.',
+  ]) {
+    const hit = infraLeak(line, corpus);
+    assert.ok(hit, `should have caught: ${line}`);
+    assert.equal(hit.id, 'operator-command', line);
+  }
+});
+
+test('a silenced path does not carry a command out with it', () => {
+  // Returning the first matching rule was enough to miss the second. The
+  // deployment path is published, so the exception swallowed it — and if the
+  // scan stopped there, the command in the same sentence left with it.
+  const hit = infraLeak('O estado fica em /var/lib/plow. Rode docker compose down -v.', corpus);
+  assert.ok(hit, 'the command must not ride out behind a published path');
+  assert.equal(hit.id, 'operator-command');
+});
+
 test('a leak that is not in the knowledge base is still caught', () => {
   // Note what is NOT in this list: "git push". It appears verbatim in
-  // concepts/latch-approval-model.md, so the agent saying it is quoting the
-  // knowledge base. The rule that ships is that whatever the owner has
-  // published is not a secret, and this test records that as a trade rather
-  // than pretending the guard can tell a command out of a page.
-  // The corpus yields to a quotation, never to a disclosure it has not earned.
+  // concepts/latch-approval-model.md, and the rule that fires on it is
+  // `operator-command`, which does not yield to a quotation. A published
+  // command is still a command.
   for (const [line, id] of [
     ['Estou em WSL2.', 'wsl'],
     ['O id do container e 7976e208480b.', 'host-id'],
@@ -122,26 +147,24 @@ function listSeedPages(root) {
   return out;
 }
 
-test('every deterministic rule is checked against the product pages', () => {
-  // The premise is no longer assumed. A rule that starts matching canonical
-  // knowledge is a rule that will rewrite correct answers, and it is the same
-  // mistake three times over.
-  const documented = [];
+test('every rule the vault silences is one the owner signed off on', () => {
+  // The corpus decides at boot which rules cannot fire when the agent quotes
+  // the knowledge base. That is a policy decision, so it is written down here
+  // instead of being a bound nobody checks: add a page holding a container id
+  // or a model string, or add a rule the vault matches, and this fails until
+  // the owner has looked at what the vault now publishes.
+  const PUBLISHABLE_BUT_SILENCED = ['deployment-path'];
+  const silenced = new Set();
   for (const probe of ALWAYS_PROBE) {
+    if (!probe.publishable) continue;
     for (const file of listSeedPages(SEED)) {
-      for (const line of readFileSync(file, 'utf8').split('\n')) {
-        if (!line.trim()) continue;
-        if (probe.pattern.test(line)) { documented.push(`${probe.id} <- ${line.trim().slice(0, 60)}`); break; }
+      if (readFileSync(file, 'utf8').split('\n').some((line) => probe.pattern.test(line))) {
+        silenced.add(probe.id);
+        break;
       }
     }
   }
-  // Not an assertion that nothing matches: three rules legitimately do, and the
-  // corpus is what makes them safe. This records them so a fourth is noticed.
-  assert.ok(Array.isArray(documented));
-  assert.equal(
-    new Set(documented.map((d) => d.split(' <-')[0])).size <= 5,
-    true,
-  );
+  assert.deepEqual([...silenced].sort(), PUBLISHABLE_BUT_SILENCED);
 });
 
 test('catches deployment identity', () => {

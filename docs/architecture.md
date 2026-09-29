@@ -57,6 +57,17 @@ The plugin obtains customer identity and conversation from Gateway hook context,
 overwriting model-provided values. Candidate tool output deliberately omits
 customer and conversation data.
 
+Read a case with the shipped reader. It is read-only, so it is safe to run
+while the agent is answering tickets:
+
+```sh
+docker compose exec agent openplow-case            # every case, one line each
+docker compose exec agent openplow-case OP-0001    # one case, with its events
+```
+
+It reports what the store already holds. A case moves only through the case
+tools, and only for the role that owns it.
+
 ## Tool and data boundaries
 
 | Role | Tool profile | Enforced deny surface | Explicitly retained |

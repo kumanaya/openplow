@@ -1,9 +1,9 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { Type } from 'typebox';
 import { definePluginEntry } from '../../plugin-sdk/plugin-entry.js';
 import { CaseStore, CaseState } from './case-store.js';
-import { AgentId, agentIdFromSessionKey, boundaryDecision, finalizeRequirement, provenancePatch, requiresResolution, resolveReadPath } from './policy.js';
+import { AgentId, agentIdFromSessionKey, boundaryDecision, evictOldest, finalizeRequirement, provenancePatch, requiresResolution, resolveReadPath } from './policy.js';
 
 const CASE_ROOT = process.env.OPENPLOW_CASE_ROOT || '/var/lib/plow/cases';
 const WIKI_PATH = process.env.WIKI_PATH || '/data/wiki';
@@ -279,7 +279,7 @@ function firstToolIsCaseTool(ctx, toolName) {
     return true;
   }
   if (runs.has(runId)) return false;
-  if (runs.size >= MAX_RUNS) runs.clear();
+  if (runs.size >= MAX_RUNS) evictOldest(runs, runId);
   runs.set(runId, true);
   return false;
 }
@@ -289,45 +289,12 @@ function note(sessionKey, ctx, toolName) {
   // The Frontline is in this list because a real `case_resolve` has to clear its
   // own requirement, or it is revised on every turn of a closed case forever.
   if (![AgentId.FRONTLINE, AgentId.INVESTIGATOR, AgentId.CURATOR].includes(ctx?.agentId)) return;
-  if (turns.size >= MAX_SESSIONS) turns.clear();
+  if (turns.size >= MAX_SESSIONS) evictOldest(turns, sessionKey);
   const turn = turns.get(sessionKey) ?? { caseCalls: 0, strikes: 0 };
   if (typeof toolName === 'string' && toolName.startsWith('case_')) turn.caseCalls += 1;
   turns.set(sessionKey, turn);
 }
 
-// The open cases, read from the store this plugin owns.
-//
-// The revise instruction used to be a bare order, and the Investigator answered
-// it with a story: "the case is VERIFIED, case_claim returned a transition
-// error". It was inventing, because it had no way to know the real state and
-// order plus a gap is an invitation. The state is right here, so the
-// instruction carries it: no claim, no invention.
-const TERMINAL = new Set(['RESOLVED', 'KNOWLEDGE_CANDIDATE', 'BLOCKED', 'FAILED', 'NEEDS_HUMAN']);
-
-function openCases() {
-  let entries;
-  try {
-    entries = readdirSync(CASE_ROOT, { withFileTypes: true });
-  } catch {
-    return { labels: [], verifiedConversations: [] };
-  }
-  const open = [];
-  const verifiedConversations = [];
-  for (const entry of entries) {
-    if (!entry.isFile() || !/^OP-\d+\.json$/.test(entry.name)) continue;
-    try {
-      const record = JSON.parse(readFileSync(join(CASE_ROOT, entry.name), 'utf8'));
-      if (TERMINAL.has(record.status)) continue;
-      open.push(`${record.id} (${record.status})`);
-      if (record.status === 'VERIFIED' && typeof record.conversation === 'string') {
-        verifiedConversations.push(record.conversation);
-      }
-    } catch {
-      // A record we cannot read is a record we do not claim knowledge about.
-    }
-  }
-  return { labels: open.sort(), verifiedConversations };
-}
 
 function enforceCaseWork(ctx) {
   const sessionKey = ctx?.sessionKey;
@@ -340,7 +307,13 @@ function enforceCaseWork(ctx) {
   // made the Frontline branch below unreachable and its variable out of scope at
   // the same time — dead code that every unit test passed, because the test
   // called the pure function and not the wiring that never called it.
-  const { labels: open, verifiedConversations } = openCases();
+
+  // The state travels in the instruction, not just the order. A revise that
+  // says only "do the work" gets answered with a story — "the case is
+  // VERIFIED, case_claim returned a transition error" — because the model had
+  // no way to know the real state, and order plus a gap is an invitation to
+  // invent. The store knows, so the instruction carries what it holds.
+  const { labels: open, verifiedConversations } = store.openSnapshot();
 
   // Fail closed. A missing record means no case call was seen, and a security
   // rule that treats "I did not see it" as "it is fine" is the same mistake as

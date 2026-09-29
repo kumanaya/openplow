@@ -233,6 +233,29 @@ export function finalizeRequirement({ agentId, caseToolCalls = 0 }) {
   return null;
 }
 
+/**
+ * Evict ONE entry from a tracking map, and never the one this call is about.
+ *
+ * The maps that track per-conversation case work hold the strike counter next
+ * to the call count, so emptying one is not a memory decision, it is a policy
+ * one: at capacity a model that has already ignored the rule twice gets two
+ * more, and a Gateway under load is exactly when that happens. Everything
+ * else around this rule fails closed — a record it cannot find is treated as
+ * no work done, never as nothing to check — so the overflow path is the one
+ * place that must not mint a fresh budget.
+ *
+ * A Map iterates in insertion order, so the oldest entry that is not the
+ * caller's is the first key that is not the caller's.
+ */
+export function evictOldest(map, keepKey) {
+  for (const key of map.keys()) {
+    if (key !== keepKey) {
+      map.delete(key);
+      return;
+    }
+  }
+}
+
 /** `agent:<id>:<rest>` -> `<id>`. The finalize hook carries a session key, not an agent. */
 export function agentIdFromSessionKey(sessionKey) {
   if (typeof sessionKey !== 'string') return null;

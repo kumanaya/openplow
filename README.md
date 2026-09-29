@@ -40,7 +40,8 @@ OpenClaw session. The agent does not rely on cross-conversation memory.
 **02 — It checks the wiki first.** It searches the company knowledge base in
 Plow Wiki. If no reliable page covers the case, OpenPlow prepares an internal
 handoff for the owner's team. It does not investigate the customer's device or
-systems.
+systems: the investigation that follows runs against the owner's own Mac,
+through Latch, and only inside a scope the owner has authorized.
 
 [![03 — it answers with a receipt](assets/03.png)](assets/03.png)
 

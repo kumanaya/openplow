@@ -8,6 +8,7 @@ import {
   AgentId,
   agentIdFromSessionKey,
   boundaryDecision,
+  evictOldest,
   finalizeRequirement,
   provenancePatch,
   requiresResolution,
@@ -403,4 +404,47 @@ test('a verified case in this conversation has to be closed, not summarised', ()
   for (const conversation of [undefined, null, '']) {
     assert.equal(requiresResolution({ conversation, verifiedConversations: verified }), false, String(conversation));
   }
+});
+
+test('tracking overflow drops one old session, never the one being tracked', () => {
+  // These maps carry a strike counter next to the call count, so emptying one
+  // at capacity hands a model that has already ignored the rule twice a fresh
+  // budget — and capacity is reached exactly when the Gateway is busiest.
+  const turns = new Map();
+  for (const key of ['a', 'b', 'c']) turns.set(key, { caseCalls: 0, strikes: 1 });
+  evictOldest(turns, 'a');
+  assert.equal(turns.size, 2, 'exactly one entry is dropped');
+  assert.equal(turns.get('a').strikes, 1, 'the tracked session keeps its strikes');
+  assert.equal(turns.has('b'), false, 'the oldest other session is the one dropped');
+  assert.equal(turns.has('c'), true);
+});
+
+test('the open-case snapshot follows the record, and survives a restart', async (t) => {
+  const { store, root, rawRoot } = await fixture(t);
+  const created = await store.create(unknown);
+  assert.deepEqual(store.openSnapshot().labels, [`${created.id} (ESCALATED)`]);
+
+  await store.claim(created.id);
+  assert.deepEqual(store.openSnapshot().labels, [`${created.id} (INVESTIGATING)`]);
+
+  await verify(store, created.id);
+  const verified = store.openSnapshot();
+  assert.deepEqual(verified.labels, [`${created.id} (VERIFIED)`]);
+  assert.deepEqual(verified.verifiedConversations, [unknown.conversation]);
+
+  // A store rebuilt over the same directory is what a Gateway restart looks
+  // like: the snapshot has to come back from what is on disk, because a fresh
+  // process has no memory of the case the previous one was working.
+  const restarted = new CaseStore({ root: join(root, 'cases'), rawRoot });
+  assert.deepEqual(restarted.openSnapshot().labels, [`${created.id} (VERIFIED)`]);
+  assert.deepEqual(restarted.openSnapshot().verifiedConversations, [unknown.conversation]);
+
+  const second = await store.create(unknown);
+  await store.claim(second.id);
+  await store.block(second.id, 'NEEDS_HUMAN', 'operator decision required');
+  assert.deepEqual(
+    store.openSnapshot().labels,
+    [`${created.id} (VERIFIED)`],
+    'a terminal case is not open, and a verified one stays open until it is resolved',
+  );
 });
