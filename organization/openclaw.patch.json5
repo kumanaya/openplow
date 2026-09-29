@@ -35,7 +35,31 @@
         },
         tools: {
           profile: "minimal",
-          alsoAllow: ["read", "sessions_spawn", "case_create", "case_resolve"],
+          // The four tools the children own MUST be named here too, and this
+          // is not a privilege for `main`. A subagent's callable tool set is
+          // the intersection of its own allowlist with the parent's
+          // "inherited tools.allow", not a union - so a child can only ever
+          // receive a tool its parent already carries. Without these four
+          // entries the Investigator silently loses `case_claim` (it keeps
+          // `read`, reads pages, and can never claim) and the Curator resolves
+          // to an empty set and dies before the model speaks with "No callable
+          // tools remain after resolving explicit tool allowlist".
+          //
+          // Granting them to `main` cannot widen what Frontline does with
+          // them: plugin/case-workflow/policy.js refuses any case tool whose
+          // owner is not the calling role, so `case_claim` reaches the
+          // Investigator and `case_prepare_candidate` reaches the Curator and
+          // no call from `main` ever executes.
+          alsoAllow: [
+            "read", "sessions_spawn", "case_create", "case_resolve",
+            "case_claim", "case_verify", "case_block", "case_prepare_candidate",
+            // `bundle-mcp` rides the same path for the same reason: the
+            // Investigator's Latch bridge is unreachable unless the parent
+            // carries it. `main` denies `bundle-mcp` in the list below and
+            // deny wins over allow, so naming it here delivers the bridge to
+            // the Investigator without giving Frontline one.
+            "bundle-mcp"
+          ],
           deny: [
             "bundle-mcp", "exec", "process", "browser", "canvas", "nodes", "gateway",
             "message", "conversations_list", "conversations_send", "conversations_turn", "plow_start_thread",
