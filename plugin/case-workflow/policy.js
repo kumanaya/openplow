@@ -239,3 +239,24 @@ export function agentIdFromSessionKey(sessionKey) {
   const match = /^agent:([^:]+):/.exec(sessionKey);
   return match ? match[1] : null;
 }
+
+/**
+ * A verified case in this conversation that nobody closed.
+ *
+ * The Frontline was left out of the case-work enforcement on the reasoning that
+ * an honest answered turn is a complete turn. That was falsified: given a case
+ * at VERIFIED, it summarised the investigation in prose and reported it as
+ * "NEEDS_HUMAN", a state the store does not hold and the one terminal state
+ * that would have guaranteed nothing followed. Prose about a case is not the
+ * case. Only `case_resolve` moves it, and the only thing that can move it to the
+ * customer is `case_resolve`.
+ *
+ * Scoped to a case in this conversation at VERIFIED, so an ordinary answered
+ * turn is still an ordinary answered turn.
+ *
+ * @returns {boolean} true when the turn must close the case
+ */
+export function requiresResolution({ conversation, verifiedConversations = [] }) {
+  if (typeof conversation !== 'string' || conversation === '') return false;
+  return verifiedConversations.includes(conversation);
+}

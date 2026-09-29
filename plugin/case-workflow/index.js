@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { Type } from 'typebox';
 import { definePluginEntry } from '../../plugin-sdk/plugin-entry.js';
 import { CaseStore, CaseState } from './case-store.js';
-import { AgentId, agentIdFromSessionKey, boundaryDecision, finalizeRequirement, provenancePatch, resolveReadPath } from './policy.js';
+import { AgentId, agentIdFromSessionKey, boundaryDecision, finalizeRequirement, provenancePatch, requiresResolution, resolveReadPath } from './policy.js';
 
 const CASE_ROOT = process.env.OPENPLOW_CASE_ROOT || '/var/lib/plow/cases';
 const WIKI_PATH = process.env.WIKI_PATH || '/data/wiki';
@@ -307,19 +307,24 @@ function openCases() {
   try {
     entries = readdirSync(CASE_ROOT, { withFileTypes: true });
   } catch {
-    return [];
+    return { labels: [], verifiedConversations: [] };
   }
   const open = [];
+  const verifiedConversations = [];
   for (const entry of entries) {
     if (!entry.isFile() || !/^OP-\d+\.json$/.test(entry.name)) continue;
     try {
       const record = JSON.parse(readFileSync(join(CASE_ROOT, entry.name), 'utf8'));
-      if (!TERMINAL.has(record.status)) open.push(`${record.id} (${record.status})`);
+      if (TERMINAL.has(record.status)) continue;
+      open.push(`${record.id} (${record.status})`);
+      if (record.status === 'VERIFIED' && typeof record.conversation === 'string') {
+        verifiedConversations.push(record.conversation);
+      }
     } catch {
       // A record we cannot read is a record we do not claim knowledge about.
     }
   }
-  return open.sort();
+  return { labels: open.sort(), verifiedConversations };
 }
 
 function enforceCaseWork(ctx) {
@@ -339,16 +344,26 @@ function enforceCaseWork(ctx) {
     return;
   }
 
-  const need = finalizeRequirement({ agentId, caseToolCalls: turn.caseCalls });
+  const verified = agentId === AgentId.FRONTLINE
+    && requiresResolution({ conversation: sessionKey, verifiedConversations });
+  const need = verified && turn.caseCalls === 0
+    ? {
+      id: 'case-not-resolved',
+      phrase: 'case_resolve',
+      instruction:
+        'A case in this conversation is verified and you have not closed it. Summarising the investigation in prose does not move it: only case_resolve does, and its customerSafeSummary is the only result the customer may be given. Call case_resolve(caseId) before you finish this turn. Do not describe a state the store does not hold — if the case is at VERIFIED, saying NEEDS_HUMAN or BLOCKED is a state you did not read.',
+    }
+    : finalizeRequirement({ agentId, caseToolCalls: turn.caseCalls });
   if (!need) {
     turn.caseCalls = 0;
     return;
   }
 
-  const open = openCases();
+  const { labels: open, verifiedConversations } = openCases();
   const truth = open.length
     ? `The open cases are ${open.join(', ')}. None of them has an investigation or a result recorded against it.`
     : 'There are no open cases, so there is nothing here to finish and nothing to have finished.';
+  void truth;
 
   turn.strikes += 1;
   const instruction = `${need.instruction} ${truth} Do not describe a tool result you have not seen — a case moves only when case_claim, case_verify or case_block has actually run, and if you have not run one, it has not moved.`;

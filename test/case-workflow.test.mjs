@@ -10,6 +10,7 @@ import {
   boundaryDecision,
   finalizeRequirement,
   provenancePatch,
+  requiresResolution,
   resolveReadPath,
 } from '../plugin/case-workflow/policy.js';
 
@@ -381,5 +382,25 @@ test('the agent is read from the session key the finalize hook carries', () => {
   assert.equal(agentIdFromSessionKey('agent:curator:x'), 'curator');
   for (const key of [undefined, null, '', 'not-a-session', 'main:main']) {
     assert.equal(agentIdFromSessionKey(key), null, String(key));
+  }
+});
+
+test('a verified case in this conversation has to be closed, not summarised', () => {
+  // The Frontline was left out of the case-work enforcement, on the reasoning
+  // that an honest answered turn is a complete turn. Then it summarised a
+  // VERIFIED case in prose and reported it as NEEDS_HUMAN — a state the store
+  // does not hold, and the terminal state that would guarantee nothing followed.
+  const verified = ['agent:main:main'];
+
+  // A verified case in this conversation: must resolve.
+  assert.equal(requiresResolution({ conversation: 'agent:main:main', verifiedConversations: verified }), true);
+
+  // A different conversation's verified case: not this turn's business.
+  assert.equal(requiresResolution({ conversation: 'agent:main:other', verifiedConversations: verified }), false);
+
+  // Nothing verified, or nothing known: an ordinary answered turn stays ordinary.
+  assert.equal(requiresResolution({ conversation: 'agent:main:main', verifiedConversations: [] }), false);
+  for (const conversation of [undefined, null, '']) {
+    assert.equal(requiresResolution({ conversation, verifiedConversations: verified }), false, String(conversation));
   }
 });
