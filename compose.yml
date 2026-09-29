@@ -8,6 +8,14 @@ name: openplow-support
 
 services:
   agent:
+    # Named, so that the tag compose builds is the tag every script in
+    # scripts/ looks for. Without it compose names the build after
+    # project+service (`openplow-support-agent:latest`) while OPENPLOW_IMAGE
+    # in scripts/lib.sh expects `openplow-support:local`: a fresh install then
+    # builds the image, starts the container, and dies on the first helper that
+    # runs `docker run "$OPENPLOW_IMAGE"`. The two names are read from the same
+    # variable, so overriding it moves both.
+    image: ${OPENPLOW_IMAGE:-openplow-support:local}
     build: .
     # Literal, never interpolated from the host: the base's reporter reads
     # AGENT_ID, and an inherited value would report this agent's usage as

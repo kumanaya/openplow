@@ -99,6 +99,13 @@ OPENPLOW_CONFIG_VOLUME="${OPENPLOW_CONFIG_VOLUME:-openplow-support_config}"
 # The user is named rather than numbered so a drift from the Dockerfile's final
 # `USER` shows up in the command rather than in a silent numeric mismatch.
 openplow_ensure_volume_owner() { # <volume> <mountpoint>
+  # Build first. This is the one helper that runs the image without being
+  # preceded by a guard: seed-vault.sh and verify-wiki.sh call
+  # openplow_ensure_image themselves, and install.sh reached this through a
+  # `compose up --build` whose tag did not match, so a fresh install died here
+  # with a pull error for an image it had just built. Degrading to a build is
+  # the same contract the other entry points already have.
+  openplow_ensure_image || return 1
   docker run --rm --user root \
     -v "$1:$2" \
     --entrypoint sh "$OPENPLOW_IMAGE" -c \
