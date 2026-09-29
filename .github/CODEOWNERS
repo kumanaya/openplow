@@ -1,0 +1,17 @@
+# Who has to review a pull request here.
+#
+# `main` is protected: a change reaches it through a pull request, and the
+# branch requires an approving review FROM a code owner before it can merge.
+# This file is the list of those code owners, so it is what decides who can
+# unblock a pull request.
+#
+# Read the consequence before changing it. GitHub does not let an author
+# approve their own pull request, so a pull request opened by kumanaya can
+# never be approved by kumanaya. With a single code owner, that means a pull
+# request opened by kumanaya cannot be merged at all until somebody reviews it
+# from a second account. That is the intended trade: nothing lands unread, and
+# the person who can land it is not the person who wrote it.
+#
+# `required_approving_review_count` on its own cannot express that. It says how
+# many reviews are needed, not who counts as a reader.
+* @kumanaya
