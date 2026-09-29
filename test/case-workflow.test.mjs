@@ -10,6 +10,7 @@ import {
   boundaryDecision,
   evictOldest,
   finalizeRequirement,
+  firstToolIsCaseTool,
   provenancePatch,
   requiresResolution,
   resolveReadPath,
@@ -284,6 +285,38 @@ test('a refused read says which kind of miss it was', () => {
     boundaryDecision({ agentId: AgentId.INVESTIGATOR, toolName: 'read', params: { path: '/opt/plow/skills/x/SKILL.md' } }),
     /deployment's own furniture/,
   );
+});
+
+test('a claimed case can still be read, for the rest of the run', () => {
+  // Reading before claiming is refused, and that refusal is the rule this
+  // guards. Reading after claiming is the job. The guard used to clear its
+  // flag on the case call, so the next read looked like a first read again:
+  // one page per claim, and every later read denied. A deployed Investigator
+  // hit exactly that, and reported the read tool as broken rather than the
+  // policy as the thing refusing it.
+  const ctx = { runId: 'run-1', agentId: AgentId.INVESTIGATOR };
+  const runs = new Map();
+
+  assert.equal(firstToolIsCaseTool(ctx, 'read', runs), false, 'read before claiming is refused');
+  assert.equal(firstToolIsCaseTool(ctx, 'read', runs), false, 'and stays refused in the same run');
+  assert.equal(firstToolIsCaseTool(ctx, 'case_claim', runs), true, 'the case call itself passes');
+
+  // The point of the fix: investigating means reading more than one page.
+  for (const page of ['index.md', 'concepts/latch.md', 'skills/a-refusal-is-not-a-bug-report.md']) {
+    assert.equal(firstToolIsCaseTool(ctx, 'read', runs), true, `${page} must be readable after claiming`);
+  }
+  assert.equal(firstToolIsCaseTool(ctx, 'case_verify', runs), true);
+
+  // A different run has not claimed anything, so it is still held to the rule.
+  const other = { runId: 'run-2', agentId: AgentId.INVESTIGATOR };
+  assert.equal(firstToolIsCaseTool(other, 'read', runs), false, 'an unclaimed run is still refused');
+});
+
+test('the claim-first rule does not touch the Frontline or an untracked run', () => {
+  const runs = new Map();
+  const front = { runId: 'run-f', agentId: AgentId.FRONTLINE };
+  assert.equal(firstToolIsCaseTool(front, 'read', runs), true, 'the Frontline is never held to it');
+  assert.equal(firstToolIsCaseTool({ agentId: AgentId.INVESTIGATOR }, 'read', runs), true, 'no runId, no rule');
 });
 
 test('no role can reach the session or sub-agent control surface', () => {
