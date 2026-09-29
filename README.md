@@ -125,6 +125,7 @@ the correctness of an operator's authorization decision. See
 | Topic | Read |
 | --- | --- |
 | Installation | [INSTALL.md](INSTALL.md) |
+| Adopting it for your own support | [docs/adoption.md](docs/adoption.md) |
 | Product lifecycle | [docs/product.md](docs/product.md) |
 | Architecture | [docs/architecture.md](docs/architecture.md) |
 | Offline and live verification | [docs/verification.md](docs/verification.md) |
