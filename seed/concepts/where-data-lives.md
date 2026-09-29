@@ -1,7 +1,7 @@
 ---
 type: Concept
 title: Where everything actually lives
-description: The four places an OpenPlow support agent's data sits, which one is durable, and why a customer asking "did you save my ticket?" is usually asking about the wrong one.
+description: The five places an OpenPlow support agent's data sits, which one is durable, and why a customer asking "did you save my ticket?" is usually asking about the wrong one.
 category: concepts
 tags: [plow, latch, wiki, privacy, architecture]
 sources:
@@ -10,19 +10,33 @@ sources:
   - resource: https://github.com/plow-pbc/plow-openclaw-agent/blob/main/boot/agent-index.ts
   - resource: https://github.com/plow-pbc/latch/blob/main/packages/device-core/src/auditLog.ts
 created: 2026-09-25
-updated: 2026-09-26
+updated: 2026-09-28
 ---
 
 Most confusion about this agent comes from assuming one memory exists. There are
-four, on a server, a Mac and a Docker volume, and only one of them is
-knowledge.
+five, on a server, a Mac, a Docker volume and the state volume, and only one of
+them is knowledge.
 
 | Store | Where | Holds | Who writes it |
 |---|---|---|---|
 | **The chat** | the Plow API | the conversation itself, both sides | the customers, and the agent's replies |
 | **Session state** | the container, `/var/lib/plow` | OpenClaw's sessions, and `plow-checkpoints/` | the runtime |
+| **The case store** | the state volume, `/var/lib/plow/cases` | one JSON record per case, plus an append-only NDJSON event log per case | the case tools, and nothing else |
 | **Audit log** | the Mac, via Latch | every tool intent and how it was decided | Latch, on its own |
 | **The vault** | this deployment, `$WIKI_PATH` | curated knowledge, with sources | the agent, deliberately, and only as a candidate |
+
+**The case store is not a Latch store and it is not in the vault.** It is plain
+JSON on the state volume, written by `case_create`, `case_claim`, `case_verify`,
+`case_block` and `case_resolve` — which are this deployment's own tools, not
+MCP tools and not among the fifteen Latch exposes. It is reachable *only* by
+calling those tools: no role can read a case record with `read`, because the
+case store is outside the wiki and the read boundary stops at `$WIKI_PATH`. If
+you were told the cases live on the operator's Mac, or are reachable through
+Latch, or are in the vault, that is wrong in three directions.
+
+It rides the **state** volume (`openplow-support_state`), not the wiki volume.
+That is the whole durability story in one line: `down -v` takes the cases and
+the sessions, keeps the knowledge, and the chat is on the Plow side either way.
 
 **The vault is in the deployment, not on the Mac.** It rides a Docker named
 volume called `openplow-wiki`, mounted at `/data`, with `WIKI_PATH` set to

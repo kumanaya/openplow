@@ -1,8 +1,9 @@
-import { statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { Type } from 'typebox';
 import { definePluginEntry } from '../../plugin-sdk/plugin-entry.js';
 import { CaseStore, CaseState } from './case-store.js';
-import { AgentId, boundaryDecision, provenancePatch, resolveReadPath } from './policy.js';
+import { AgentId, agentIdFromSessionKey, boundaryDecision, finalizeRequirement, provenancePatch, requiresResolution, resolveReadPath } from './policy.js';
 
 const CASE_ROOT = process.env.OPENPLOW_CASE_ROOT || '/var/lib/plow/cases';
 const WIKI_PATH = process.env.WIKI_PATH || '/data/wiki';
@@ -101,6 +102,14 @@ export default definePluginEntry({
       const toolName = event?.toolName;
       if (typeof toolName !== 'string') return;
       const params = event?.params ?? {};
+      note(ctx?.sessionKey, ctx, toolName);
+      if (!firstToolIsCaseTool(ctx, toolName)) {
+        const first = ctx?.agentId === AgentId.CURATOR ? 'case_prepare_candidate(caseId)' : 'case_claim(caseId)';
+        const blockReason =
+          `call ${first} before anything else. You cannot investigate a case you have not claimed, and you cannot finish a turn that has not recorded a result: read, verify or block, and say it with the tool. If you cannot proceed, ${ctx?.agentId === AgentId.CURATOR ? 'say so and stop' : 'case_block with the precise reason'}.`;
+        logBlock(toolName, ctx, blockReason);
+        return { block: true, blockReason };
+      }
       const blockReason = boundaryDecision({ agentId: ctx?.agentId, toolName, params, wikiPath: WIKI_PATH });
       if (blockReason) {
         logBlock(toolName, ctx, blockReason);
@@ -135,6 +144,11 @@ export default definePluginEntry({
         }
       }
     });
+
+    // A turn of the internal roles that finishes without touching the case store
+    // is a turn that did no work, whatever it read. This is the mechanical half
+    // of the rule the prompts keep failing to carry.
+    api.on('before_agent_finalize', (event, ctx) => enforceCaseWork(ctx));
 
     api.registerTool({
       name: 'case_create',
@@ -233,3 +247,138 @@ export default definePluginEntry({
     console.log('[case-workflow] ready: durable cases and role-bound tools registered');
   },
 });
+
+// ── case work is not optional ─────────────────────────────────────────────────
+//
+// Tracked per conversation, because that is the key the finalize hook carries.
+// Cleared when a turn passes, so a turn that did the work does not give the
+// next one a free pass; and given up on after a couple of turns that refuse, so
+// a model that never complies cannot burn two extra calls on every turn of a
+// long conversation.
+const turns = new Map();
+const MAX_SESSIONS = 256;
+const MAX_STRIKES = 2;
+
+// Per run, not per conversation. The finalize hook told the Investigator it had
+// not touched the case, twice, and it answered both times with a story about
+// having claimed and verified it. A finalisation instruction loses to a
+// confident narrator. The tool door does not: the first thing this role is
+// allowed to do is the call, so there is no room to read first and narrate
+// afterwards.
+const runs = new Map();
+const MAX_RUNS = 512;
+
+function firstToolIsCaseTool(ctx, toolName) {
+  const runId = ctx?.runId;
+  if (!runId) return true; // no run to track: do not invent a rule we cannot keep
+  const agentId = ctx?.agentId;
+  if (agentId !== AgentId.INVESTIGATOR && agentId !== AgentId.CURATOR) return true;
+  const isCaseTool = typeof toolName === 'string' && toolName.startsWith('case_');
+  if (isCaseTool) {
+    runs.delete(runId);
+    return true;
+  }
+  if (runs.has(runId)) return false;
+  if (runs.size >= MAX_RUNS) runs.clear();
+  runs.set(runId, true);
+  return false;
+}
+
+function note(sessionKey, ctx, toolName) {
+  if (!sessionKey) return;
+  // The Frontline is in this list because a real `case_resolve` has to clear its
+  // own requirement, or it is revised on every turn of a closed case forever.
+  if (![AgentId.FRONTLINE, AgentId.INVESTIGATOR, AgentId.CURATOR].includes(ctx?.agentId)) return;
+  if (turns.size >= MAX_SESSIONS) turns.clear();
+  const turn = turns.get(sessionKey) ?? { caseCalls: 0, strikes: 0 };
+  if (typeof toolName === 'string' && toolName.startsWith('case_')) turn.caseCalls += 1;
+  turns.set(sessionKey, turn);
+}
+
+// The open cases, read from the store this plugin owns.
+//
+// The revise instruction used to be a bare order, and the Investigator answered
+// it with a story: "the case is VERIFIED, case_claim returned a transition
+// error". It was inventing, because it had no way to know the real state and
+// order plus a gap is an invitation. The state is right here, so the
+// instruction carries it: no claim, no invention.
+const TERMINAL = new Set(['RESOLVED', 'KNOWLEDGE_CANDIDATE', 'BLOCKED', 'FAILED', 'NEEDS_HUMAN']);
+
+function openCases() {
+  let entries;
+  try {
+    entries = readdirSync(CASE_ROOT, { withFileTypes: true });
+  } catch {
+    return { labels: [], verifiedConversations: [] };
+  }
+  const open = [];
+  const verifiedConversations = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !/^OP-\d+\.json$/.test(entry.name)) continue;
+    try {
+      const record = JSON.parse(readFileSync(join(CASE_ROOT, entry.name), 'utf8'));
+      if (TERMINAL.has(record.status)) continue;
+      open.push(`${record.id} (${record.status})`);
+      if (record.status === 'VERIFIED' && typeof record.conversation === 'string') {
+        verifiedConversations.push(record.conversation);
+      }
+    } catch {
+      // A record we cannot read is a record we do not claim knowledge about.
+    }
+  }
+  return { labels: open.sort(), verifiedConversations };
+}
+
+function enforceCaseWork(ctx) {
+  const sessionKey = ctx?.sessionKey;
+  if (!sessionKey) return;
+  const agentId = agentIdFromSessionKey(sessionKey);
+  if (agentId !== AgentId.FRONTLINE && agentId !== AgentId.INVESTIGATOR && agentId !== AgentId.CURATOR) return;
+
+  // Read the store before anything else, so the check below has the state in
+  // scope. It used to be read further down, behind the role guard above, which
+  // made the Frontline branch below unreachable and its variable out of scope at
+  // the same time — dead code that every unit test passed, because the test
+  // called the pure function and not the wiring that never called it.
+  const { labels: open, verifiedConversations } = openCases();
+
+  // Fail closed. A missing record means no case call was seen, and a security
+  // rule that treats "I did not see it" as "it is fine" is the same mistake as
+  // the one this hook exists to stop. It also removes the dependency on the two
+  // hooks spelling the session the same way: if they disagree, this misses the
+  // record, enforces, and the strike cap stops it becoming a loop.
+  const turn = turns.get(sessionKey) ?? { caseCalls: 0, strikes: 0 };
+  if (turn.strikes >= MAX_STRIKES) {
+    console.log(`[case-work] giving up on session=${sessionKey} after ${turn.strikes} ignored turns`);
+    return;
+  }
+
+  const verified = agentId === AgentId.FRONTLINE
+    && requiresResolution({ conversation: sessionKey, verifiedConversations });
+  const need = verified && turn.caseCalls === 0
+    ? {
+      id: 'case-not-resolved',
+      phrase: 'case_resolve',
+      instruction:
+        'A case in this conversation is verified and you have not closed it. Summarising the investigation in prose does not move it: only case_resolve does, and its customerSafeSummary is the only result the customer may be given. Call case_resolve(caseId) before you finish this turn. Do not describe a state the store does not hold — if the case is at VERIFIED, saying NEEDS_HUMAN or BLOCKED is a state you did not read.',
+    }
+    : finalizeRequirement({ agentId, caseToolCalls: turn.caseCalls });
+  if (!need) {
+    turn.caseCalls = 0;
+    return;
+  }
+
+  const truth = open.length
+    ? `The open cases are ${open.join(', ')}. None of them has an investigation or a result recorded against it.`
+    : 'There are no open cases, so there is nothing here to finish and nothing to have finished.';
+  void truth;
+
+  turn.strikes += 1;
+  const instruction = `${need.instruction} ${truth} Do not describe a tool result you have not seen — a case moves only when case_claim, case_verify or case_block has actually run, and if you have not run one, it has not moved.`;
+  console.log(`[case-workflow] revise session=${sessionKey} rule="${need.id}" phrase="${need.phrase}" (turn ${turn.strikes} of ${MAX_STRIKES})`);
+  return {
+    action: 'revise',
+    reason: instruction,
+    retry: { instruction, idempotencyKey: 'openplow-case-work', maxAttempts: 2 },
+  };
+}

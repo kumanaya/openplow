@@ -193,3 +193,70 @@ export function provenancePatch({ agentId, toolName, params = {}, sessionKey, re
   }
   return null;
 }
+
+/**
+ * A turn that investigates a case and never touches it.
+ *
+ * The Investigator is not a researcher who happens to read a case — it is the
+ * owner of one. It read twenty-five pages, worked out precisely what the wiki
+ * did not cover, and then went looking for the case on disk. Nothing in the
+ * case store changed, the case sat at ESCALATED, and the customer who was told
+ * an investigation had started heard nothing at all.
+ *
+ * The prompt has said "call case_claim first" for a while, and the model read
+ * twenty-five pages past it. That is the same conclusion this repository keeps
+ * reaching: a prompt is not enforcement.
+ *
+ * Pure, so the rule is tested without a model and without a live case.
+ *
+ * @returns {{id: string, phrase: string, instruction: string} | null}
+ */
+export function finalizeRequirement({ agentId, caseToolCalls = 0 }) {
+  if (agentId === AgentId.CURATOR) {
+    if (caseToolCalls > 0) return null;
+    return {
+      id: 'case-not-staged',
+      phrase: 'case_prepare_candidate',
+      instruction:
+        'You have not staged anything. A Curator turn exists to turn one resolved case into a candidate: call case_prepare_candidate(caseId) with the sanitized lesson. If there is no case, or the case is not resolved, say that instead of finishing — but do it in a sentence that ends this turn, not by returning without saying anything.',
+    };
+  }
+  if (agentId === AgentId.INVESTIGATOR) {
+    if (caseToolCalls > 0) return null;
+    return {
+      id: 'case-not-claimed',
+      phrase: 'case_claim',
+      instruction:
+        'You have not touched the case you were given. You are not a researcher who happens to read a case — you own one, and the case store is the only place it exists. Call case_claim(caseId) first, then exactly one of: case_verify if you have tool-backed evidence, or case_block with the precise reason if you do not. Reading the wiki to find the case, and reporting a finding to Frontline in prose, leaves the case exactly where it was and the customer waiting. A turn that ends without one of those three calls is wasted.',
+    };
+  }
+  return null;
+}
+
+/** `agent:<id>:<rest>` -> `<id>`. The finalize hook carries a session key, not an agent. */
+export function agentIdFromSessionKey(sessionKey) {
+  if (typeof sessionKey !== 'string') return null;
+  const match = /^agent:([^:]+):/.exec(sessionKey);
+  return match ? match[1] : null;
+}
+
+/**
+ * A verified case in this conversation that nobody closed.
+ *
+ * The Frontline was left out of the case-work enforcement on the reasoning that
+ * an honest answered turn is a complete turn. That was falsified: given a case
+ * at VERIFIED, it summarised the investigation in prose and reported it as
+ * "NEEDS_HUMAN", a state the store does not hold and the one terminal state
+ * that would have guaranteed nothing followed. Prose about a case is not the
+ * case. Only `case_resolve` moves it, and the only thing that can move it to the
+ * customer is `case_resolve`.
+ *
+ * Scoped to a case in this conversation at VERIFIED, so an ordinary answered
+ * turn is still an ordinary answered turn.
+ *
+ * @returns {boolean} true when the turn must close the case
+ */
+export function requiresResolution({ conversation, verifiedConversations = [] }) {
+  if (typeof conversation !== 'string' || conversation === '') return false;
+  return verifiedConversations.includes(conversation);
+}
