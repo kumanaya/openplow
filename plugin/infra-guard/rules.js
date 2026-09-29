@@ -82,9 +82,18 @@ const ALWAYS = [
     // `docker compose run --rm --user root agent`. With the exception applied,
     // both passed the guard — the page documenting the destructive command was
     // exactly what licensed waving the destructive command through.
+    //
+    // Host service diagnostics joined the list for the same reason, from a real
+    // reply: a 502 report came back with `systemctl status nginx`,
+    // `journalctl -u nginx` and `curl -I http://localhost:<port>` handed to the
+    // customer. It names the deployment's init system, its web server and its
+    // ports — and it is advice that cannot be right, because this deployment
+    // is a container with no published port and no systemd on the host. A
+    // command the reader cannot run is already caught by the path rules; one
+    // that is wrong for the reader and true about the machine is the gap.
     publishable: false,
     id: 'operator-command',
-    pattern: /\bdocker(?:\s+-?compose)?\s+(?:run|exec|build|up|down|logs)\b|--user\s+root\b|\bsudo\s+\w+|\bgit\s+(?:push|commit)\b/,
+    pattern: /\bdocker(?:\s+-?compose)?\s+(?:run|exec|build|up|down|logs)\b|--user\s+root\b|\bsudo\s+\w+|\bgit\s+(?:push|commit)\b|\bsystemctl\b|\bjournalctl\b|\bservice\s+\w+\s+(?:status|restart|start|stop)\b|\bnginx\s+-t\b/,
     why: "a command for the reader to run, which is the owner's job, not a support answer",
   },
 ];

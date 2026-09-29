@@ -106,6 +106,24 @@ test('a published command is still a command', () => {
   }
 });
 
+test('host service diagnostics are operator commands too', () => {
+  // A real reply, from a real 502 report, handed the customer this. It names
+  // the deployment's init system, its web server and its ports, and it cannot
+  // be right: the deployment is a container with no published port and no
+  // systemd on the host. Nothing in the vault publishes these, so the
+  // corpus exception is not what stops them.
+  for (const line of [
+    'Rode systemctl status nginx para ver se o nginx esta rodando.',
+    'journalctl -u nginx --no-pager -n 50 mostra os ultimos erros.',
+    'Depois disso e so um systemctl restart.',
+    'Valida com nginx -t antes de tentar de novo.',
+  ]) {
+    const hit = infraLeak(line, corpus);
+    assert.ok(hit, `should have caught: ${line}`);
+    assert.equal(hit.id, 'operator-command', line);
+  }
+});
+
 test('a silenced path does not carry a command out with it', () => {
   // Returning the first matching rule was enough to miss the second. The
   // deployment path is published, so the exception swallowed it — and if the
