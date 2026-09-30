@@ -17,7 +17,7 @@
 # /home/node. Without the override it reads a store that is not there.
 #
 # Usage:
-#   scripts/register.sh                       # name, blurb and runtime only
+#   scripts/register.sh                       # name, blurb, runtime, repo, images
 #   AGENT_VIDEO=<youtube-id> scripts/register.sh
 #   AGENT_LOGO=./logo.png AGENT_INSTALL_URL=https://… scripts/register.sh
 set -eu
@@ -34,12 +34,53 @@ AGENT_LOGO="${AGENT_LOGO:-}"
 AGENT_INSTALL_URL="${AGENT_INSTALL_URL:-}"
 AGENT_REPO="${AGENT_REPO:-https://github.com/kumanaya/openplow}"
 
+# --image takes a PUBLIC URL, one per flag, because that is what the Index
+# renders. It is not read from disk like --logo is, so there is no file to
+# stage: the repo's own assets, served by GitHub, are the default. Four is the
+# whole current storyboard (assets/01-04.png); the hackathon requires at least
+# one image on the listing, and a bare run has to satisfy that on its own.
+AGENT_IMAGE="${AGENT_IMAGE:-https://raw.githubusercontent.com/kumanaya/openplow/main/assets/01.png https://raw.githubusercontent.com/kumanaya/openplow/main/assets/02.png https://raw.githubusercontent.com/kumanaya/openplow/main/assets/03.png https://raw.githubusercontent.com/kumanaya/openplow/main/assets/04.png}"
+
+# Deliberately NOT assets/banner.png. That is the legacy illustration: it
+# advertises "Investigate — look into real issues (via Latch)", the workflow
+# this project replaced, and assets/README.md says not to put it on a product
+# page. Pass one explicitly to use a logo.
+
 client() {
   docker compose exec -T \
     -e HOME=/var/lib/plow \
     -e OPENCLAW_STATE_DIR=/var/lib/plow \
     agent python3 /opt/plow/agent-index-client.py "$@"
 }
+
+# The container must be up: this is its credential and its state volume, and
+# the logo is staged into it. Checked before anything is built so a dead
+# deployment fails here rather than after a compose cp.
+if ! docker compose ps --status running --services 2>/dev/null | grep -qx agent; then
+  echo "the agent is not running — 'docker compose up -d' first." >&2
+  exit 1
+fi
+
+# A logo URL is passed straight through; the client uploads a URL itself.
+#
+# A logo FILE is read by the client, and the client runs INSIDE the container
+# (see client()), so a host path cannot resolve there — `docker compose exec`
+# starts in /app, where ./assets/banner.png is not a file. Staged in, then
+# named by its container path, or the registration dies on "cannot read".
+LOGO=""
+if [ -n "$AGENT_LOGO" ]; then
+  case "$AGENT_LOGO" in
+    http://*|https://*)
+      LOGO="$AGENT_LOGO"
+      ;;
+    *)
+      [ -f "$AGENT_LOGO" ] || { echo "AGENT_LOGO: no such file: $AGENT_LOGO" >&2; exit 1; }
+      LOGO=/tmp/openplow-logo
+      docker compose cp "$AGENT_LOGO" "agent:$LOGO" >/dev/null \
+        || { echo "could not stage the logo into the container." >&2; exit 1; }
+      ;;
+  esac
+fi
 
 set -- --register --agent "$AGENT_SLUG" \
   --name "$AGENT_NAME" \
@@ -48,14 +89,12 @@ set -- --register --agent "$AGENT_SLUG" \
   --runtime OpenClaw
 
 [ -n "$AGENT_VIDEO" ] && set -- "$@" --video "$AGENT_VIDEO"
-[ -n "$AGENT_LOGO" ] && set -- "$@" --logo "$AGENT_LOGO"
+[ -n "$LOGO" ] && set -- "$@" --logo "$LOGO"
 [ -n "$AGENT_INSTALL_URL" ] && set -- "$@" --install-url "$AGENT_INSTALL_URL"
 
-# The container must be up: this is its credential and its state volume.
-if ! docker compose ps --status running --services 2>/dev/null | grep -qx agent; then
-  echo "the agent is not running — 'docker compose up -d' first." >&2
-  exit 1
-fi
+for image in $AGENT_IMAGE; do
+  set -- "$@" --image "$image"
+done
 
 # Not `exec client ...`: exec takes a command, and a POSIX sh function is not
 # one. Under dash — /bin/sh on most Linux hosts, which is what this shebang
